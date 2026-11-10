@@ -47,7 +47,8 @@ deflate about 5 times faster than on one thread.
 ## Build
 
 ```
-git clone --recursive https://github.com/kisstp2006/Helix.Image
+git clone https://github.com/kisstp2006/Helix.Image
+git -C Helix.Image submodule update --init
 cmake --preset windows-release
 cmake --build --preset windows-release
 ctest --preset windows-release
