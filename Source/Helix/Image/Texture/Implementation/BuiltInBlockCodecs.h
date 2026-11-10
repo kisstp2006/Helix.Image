@@ -17,6 +17,10 @@ namespace helix::image
     {
         void AddDecoders(BlockCodec* codecs, usize& count);
     }
+    namespace astc
+    {
+        void AddDecoders(BlockCodec* codecs, usize& count);
+    }
 
     // The block codecs of this library, registered on first use of the registry.
     inline const BlockCodec* BuiltInBlockCodecs(usize& count)
@@ -30,6 +34,7 @@ namespace helix::image
                 bc::AddDecoders(codecs, count);
                 bptc::AddDecoders(codecs, count);
                 etc::AddDecoders(codecs, count);
+                astc::AddDecoders(codecs, count);
             }
         };
         static const List list;

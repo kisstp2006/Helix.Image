@@ -153,3 +153,32 @@ HX_TEST(BlockDecoder, EdgeSizesAndMips)
     rgba.Allocate(PixelFormat::RGBA8, 4, 4);
     HX_CHECK(!DecompressTexture(rgba, out, error));
 }
+
+HX_TEST(BlockDecoder, AstcVoidExtentAndAnyBlock)
+{
+    // The void extent block: block mode 0x1FC, then one RGBA color in 16 bit values.
+    u8 block[16] = {0xFC, 0xFD, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x30, 0x00, 0x80, 0x00, 0xC0, 0x00, 0xFF};
+    TextureData out;
+    String error;
+    HX_REQUIRE(DecompressTexture(Blocks(PixelFormat::ASTC6x5, 12, 10, block), out, error));
+    bool constant = true;
+    for (usize i = 0; i < out.data.Size(); i += 4)
+        constant = constant && out.data[i] == 0x30 && out.data[i + 1] == 0x80 && out.data[i + 2] == 0xC0 && out.data[i + 3] == 0xFF;
+    HX_CHECK(constant);
+
+    // Every block, valid or not, decodes to something (invalid ones to magenta) without reading outside the block.
+    u64 state = 4242;
+    for (u32 f = u32(PixelFormat::ASTC4x4); f <= u32(PixelFormat::ASTC12x12); f++)
+        for (int round = 0; round < 300; round++)
+        {
+            u8 random[16];
+            for (u8& b : random)
+            {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                b = u8(state >> 24);
+            }
+            HX_REQUIRE(DecompressTexture(Blocks(PixelFormat(f), 12, 12, random), out, error));
+        }
+}
