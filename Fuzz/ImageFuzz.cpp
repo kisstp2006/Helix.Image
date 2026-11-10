@@ -6,6 +6,7 @@
 #include <Support/TestVectors.h>
 
 #include <Helix/Image/Codecs/ImageDecoder.h>
+#include <Helix/Image/Codecs/ImageEncoder.h>
 #include <Helix/Testing/Fuzz.h>
 
 #include <cstring>
@@ -185,4 +186,22 @@ HX_FUZZ(Pvr)
     if (round.Below(2))
         return DecodeMutated(round, WritePvr(Shape(round, PixelFormat::ASTC4x4), 27, 0, 0, 0), "pvr");
     return DecodeMutated(round, WritePvr(Shape(round, PixelFormat::RGBA8), u32('r') | u32('g') << 8 | u32('b') << 16 | u32('a') << 24, 0x08080808, 0, 0), "pvr");
+}
+
+// Real PIZ data from the encoder, half or float, in sizes that reach every case of the wavelet.
+HX_FUZZ(ExrPiz)
+{
+    TextureData source;
+    u32 w = 1 + round.Below(40), h = 1 + round.Below(40);
+    source.Allocate(PixelFormat::RGBA32Float, w, h);
+    float* f = reinterpret_cast<float*>(source.data.Data());
+    for (u32 i = 0; i < w * h * 4; i++)
+        f[i] = float((i * 7) % 23) * 0.125f;
+    EncodeOptions options;
+    options.exrFlags = ExrCompressPiz | (round.Below(2) ? ExrOutputAsFloat : 0u);
+    Array<u8> file;
+    String error;
+    if (!EncodeImage(source, "exr", file, error, options))
+        return 0;
+    return DecodeMutated(round, file, "exr");
 }

@@ -1,4 +1,5 @@
 #include <Helix/Image/Codecs/Implementation/BuiltInDecoders.h>
+#include <Helix/Image/Codecs/Implementation/StbAllocator.h>
 
 #include <Helix/Core/Basics/Assert.h>
 #include <Helix/Core/Memory/Allocator.h>

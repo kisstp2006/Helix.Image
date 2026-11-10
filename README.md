@@ -1,7 +1,8 @@
 # Helix.Image
 
 Image codecs and compression of the Helix engine. PNG, deflate and the other own codecs are written from the
-specifications; JPEG, BMP, TGA, PSD and GIF use the public domain stb_image (see `THIRD-PARTY.txt`).
+specifications; JPEG, BMP, TGA, PSD and GIF are read with the public domain stb_image, JPG and TGA written with stb_image_write
+(see `THIRD-PARTY.txt`).
 
 ## Contents
 
@@ -11,11 +12,13 @@ specifications; JPEG, BMP, TGA, PSD and GIF use the public domain stb_image (see
 | `Source/Helix/Image/Formats/PixelFormat.h` | `PixelFormat`: 8 / 16 bit, half, float, packed, BC1 to BC7, ETC2 / EAC, ASTC; `FormatInfo`, `SurfaceBytes` |
 | `Source/Helix/Image/Texture/TextureData.h` | `TextureData`: layers, faces and mips in one block with a subresource table |
 | `Source/Helix/Image/Codecs/ImageDecoder.h` | `DecodeImage` and the decoder registry (`RegisterImageDecoder`, `FindImageDecoder`) |
+| `Source/Helix/Image/Codecs/ImageEncoder.h` | `EncodeImage`, `EncodeOptions` (JPG quality, `ExrFlags`) and the encoder registry |
+| `Source/Helix/Image/Texture/Convert.h` | `ConvertPixels`, `ToFloat`, `FromFloat` for every uncompressed format, `FloatToHalf`, `HalfToFloat` |
 | `Source/Helix/Image/Compression/Deflate.h` | `Inflate`, `Deflate` (RFC 1951), `ZlibDecompress`, `ZlibCompress` (RFC 1950), `Adler32` |
 | `Source/Helix/Image/Codecs/Png.h` | `DecodePng`, `EncodePng` |
 | `Tests/`, `Benchmarks/`, `Fuzz/` | Round trips, files of other encoders, damaged input, throughput, a fuzz target per decoder |
 | `Tools/GenerateTestImages.ps1` | Writes JPEG, GIF, BMP and TIFF test files with the Windows imaging codecs and the pixels Windows decodes |
-| `ThirdParty/stb_image/` | stb_image v2.30, unchanged |
+| `ThirdParty/stb_image/`, `ThirdParty/stb_image_write/` | stb_image v2.30 and stb_image_write v1.16, unchanged |
 | `Tools/GenerateTestVectors.py` | Writes the PNG and zlib test vectors with Python's zlib and a reference PNG writer |
 
 ## Deflate
@@ -54,6 +57,26 @@ block, ordered layer, face, mip, with a table of offsets and sizes. Damaged file
 | DDS | own | the stored format: legacy FourCC and pixel masks or the DX10 header; 2D, cube, array, volume, mips |
 | KTX, KTX2 | own | the stored format; KTX rows unpadded, KTX2 supercompression none or zlib (Basis and Zstandard are errors) |
 | PVR (v3) | own | the stored format: BC, ETC2 / EAC, ASTC and uncompressed channel layouts (PVRTC is an error) |
+
+## Encoding
+
+```cpp
+helix::image::EncodeOptions options;
+options.exrFlags = helix::image::ExrCompressPiz | helix::image::ExrOutputAsFloat;
+helix::Array<helix::u8> file;
+helix::String error;
+helix::image::EncodeImage(texture, "exr", file, error, options);
+```
+
+Encoders write the first subresource of an uncompressed texture, converted from its format; they are found by name or
+extension and added with `RegisterImageEncoder`.
+
+| Format | Encoder | Output |
+|---|---|---|
+| PNG | own | gray, RGB or RGBA from the channels of the format; 16 bit samples for 16 bit, float and 10 bit formats |
+| JPG | stb_image_write | RGB at `quality` (1 to 100, 75 by default), alpha dropped |
+| TGA | stb_image_write | run length encoded RGBA, or RGB for formats without alpha |
+| EXR | own | R, G, B, A as the format has them, half or float (`ExrOutputAsFloat`), NONE, RLE (`ExrCompressRle`), ZIP (`ExrCompressZip`) or PIZ (`ExrCompressPiz`) |
 
 ## PNG
 

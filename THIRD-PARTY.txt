@@ -29,3 +29,10 @@ ThirdParty/stb_image/stb_image.h
   AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
   ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+ThirdParty/stb_image_write/stb_image_write.h
+  stb_image_write v1.16 by Sean Barrett, http://nothings.org/stb
+  Source: https://raw.githubusercontent.com/nothings/stb/master/stb_image_write.h (2026-11-10)
+  SHA-256: cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05
+  Used for JPG and TGA (Source/Helix/Image/Codecs/Implementation/StbEncoders.cpp). The file is unchanged.
+  Of its two licenses, Helix uses alternative B, the public domain dedication quoted above (the same text).
