@@ -176,7 +176,7 @@ namespace helix::image::astc
             }
             // Color endpoint modes: one for all partitions, or a class with per partition offsets whose upper bits sit
             // below the weights.
-            u32 cem[4];
+            u32 cem[4] = {};
             u32 partitionIndex = 0, colorStart = 17, belowWeights = 128 - weightBits;
             if (partitions == 1)
                 cem[0] = Bits(block, 13, 4);
@@ -186,7 +186,7 @@ namespace helix::image::astc
                 colorStart = 29;
                 u32 field = Bits(block, 23, 6);
                 if ((field & 3) == 0)
-                    for (u32 p = 0; p < partitions; p++)
+                    for (u32 p = 0; p < 4; p++)
                         cem[p] = field >> 2;
                 else
                 {
@@ -194,7 +194,7 @@ namespace helix::image::astc
                     belowWeights -= extra;
                     u32 value = (field >> 2) | (Bits(block, belowWeights, extra) << 4);
                     u32 base = (field & 3) - 1;
-                    for (u32 p = 0; p < partitions; p++)
+                    for (u32 p = 0; p < 4; p++)
                     {
                         u32 c = (value >> p) & 1, m = (value >> (partitions + 2 * p)) & 3;
                         cem[p] = ((base + c) << 2) | m;
@@ -257,6 +257,27 @@ namespace helix::image::astc
                         t[c] = u8(((a * (64 - weight) + b * weight + 32) >> 6) >> 8);
                     }
                 }
+        }
+    }
+
+    void DecodeBlock(u32 width, u32 height, const u8* block, u8* texels)
+    {
+        switch (width * 16 + height)
+        {
+        case 4 * 16 + 4: Decode<4, 4>(block, texels); break;
+        case 5 * 16 + 4: Decode<5, 4>(block, texels); break;
+        case 5 * 16 + 5: Decode<5, 5>(block, texels); break;
+        case 6 * 16 + 5: Decode<6, 5>(block, texels); break;
+        case 6 * 16 + 6: Decode<6, 6>(block, texels); break;
+        case 8 * 16 + 5: Decode<8, 5>(block, texels); break;
+        case 8 * 16 + 6: Decode<8, 6>(block, texels); break;
+        case 8 * 16 + 8: Decode<8, 8>(block, texels); break;
+        case 10 * 16 + 5: Decode<10, 5>(block, texels); break;
+        case 10 * 16 + 6: Decode<10, 6>(block, texels); break;
+        case 10 * 16 + 8: Decode<10, 8>(block, texels); break;
+        case 10 * 16 + 10: Decode<10, 10>(block, texels); break;
+        case 12 * 16 + 10: Decode<12, 10>(block, texels); break;
+        default: Decode<12, 12>(block, texels); break;
         }
     }
 

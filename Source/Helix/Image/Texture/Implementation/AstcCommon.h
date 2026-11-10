@@ -438,4 +438,7 @@ namespace helix::image::astc
         };
         return (at(js, jt) * w00 + at(js + 1, jt) * w01 + at(js, jt + 1) * w10 + at(js + 1, jt + 1) * w11 + 8) >> 4;
     }
+
+    // One block of `width` x `height` texels to RGBA8 (AstcDecoder.cpp).
+    void DecodeBlock(u32 width, u32 height, const u8* block, u8* texels);
 }

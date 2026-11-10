@@ -113,7 +113,8 @@ HX_TEST(BlockEncoder, EveryEncoderReachesItsQuality)
         {PixelFormat::BC5Snorm, 2, 36, 38, 40}, {PixelFormat::BC7, 4, 32, 38, 40},  {PixelFormat::BC6H, 3, 48, 48, 50}, {PixelFormat::BC6HSigned, 3, 48, 48, 50},
         {PixelFormat::ETC2RGB, 3, 28, 32, 32}, {PixelFormat::ETC2RGBA1, 4, 28, 30, 30}, {PixelFormat::ETC2RGBA, 4, 29, 33, 33},
         {PixelFormat::EACR11, 1, 39, 40, 41}, {PixelFormat::EACR11Snorm, 1, 39, 40, 41}, {PixelFormat::EACRG11, 2, 39, 40, 41},
-        {PixelFormat::EACRG11Snorm, 2, 39, 40, 41},
+        {PixelFormat::EACRG11Snorm, 2, 39, 40, 41}, {PixelFormat::ASTC4x4, 4, 32, 34, 35}, {PixelFormat::ASTC6x6, 4, 23, 25, 26},
+        {PixelFormat::ASTC8x8, 4, 20, 21, 22}, {PixelFormat::ASTC12x12, 4, 17, 19, 20},
     };
     TextureData source = TestSet();
     for (const Expectation& e : expectations)
