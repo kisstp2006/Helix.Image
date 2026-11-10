@@ -3,6 +3,7 @@
 #include <Helix/Image/Compression/Deflate.h>
 
 #include <Helix/Core/Hashing/Hash.h>
+#include <Helix/Jobs/Jobs.h>
 
 #include <cstring>
 
@@ -72,33 +73,56 @@ namespace helix::image
         }
     }
 
+    namespace
+    {
+        struct FilterContext
+        {
+            const u8* pixels;
+            u8* filtered;
+            usize rowBytes;
+            u32 bpp;
+        };
+
+        // Rows only read the source image, so any range of rows can be filtered on its own.
+        void FilterRows(void* user, u32 begin, u32 end)
+        {
+            const FilterContext& c = *static_cast<const FilterContext*>(user);
+            Array<u8> trial, zeroRow;
+            trial.Resize(c.rowBytes);
+            zeroRow.Resize(c.rowBytes);
+            for (u32 y = begin; y < end; y++)
+            {
+                const u8* cur = c.pixels + y * c.rowBytes;
+                const u8* prior = y ? cur - c.rowBytes : zeroRow.Data();
+                u8* dst = c.filtered + y * (c.rowBytes + 1);
+                u64 best = ~0ull;
+                for (u8 type = 0; type < 5; type++)
+                {
+                    u64 cost = FilterRow(type, cur, prior, c.rowBytes, c.bpp, trial.Data());
+                    if (cost < best)
+                    {
+                        best = cost;
+                        dst[0] = type;
+                        std::memcpy(dst + 1, trial.Data(), c.rowBytes);
+                    }
+                }
+            }
+        }
+    }
+
     void EncodePng(const Image& image, Array<u8>& out, int compressionLevel)
     {
         static constexpr u8 kColorType[4] = {0, 4, 2, 6};
         u32 bpp = ChannelCount(image.format);
         usize rowBytes = image.RowBytes();
         Array<u8> filtered;
-        filtered.Resize((rowBytes + 1) * image.height);
-        Array<u8> trial, zeroRow;
-        trial.Resize(rowBytes);
-        zeroRow.Resize(rowBytes);
-        for (u32 y = 0; y < image.height; y++)
-        {
-            const u8* cur = image.pixels.Data() + y * rowBytes;
-            const u8* prior = y ? cur - rowBytes : zeroRow.Data();
-            u8* dst = filtered.Data() + y * (rowBytes + 1);
-            u64 best = ~0ull;
-            for (u8 type = 0; type < 5; type++)
-            {
-                u64 cost = FilterRow(type, cur, prior, rowBytes, bpp, trial.Data());
-                if (cost < best)
-                {
-                    best = cost;
-                    dst[0] = type;
-                    std::memcpy(dst + 1, trial.Data(), rowBytes);
-                }
-            }
-        }
+        filtered.AppendUninitialized((rowBytes + 1) * image.height);
+        FilterContext context{image.pixels.Data(), filtered.Data(), rowBytes, bpp};
+        constexpr u32 kRowsPerJob = 32;
+        if (jobs::IsInitialized() && image.height > 2 * kRowsPerJob)
+            jobs::Complete(jobs::ScheduleParallelFor(&FilterRows, &context, image.height, kRowsPerJob));
+        else
+            FilterRows(&context, 0, image.height);
         Array<u8> compressed;
         ZlibCompress(filtered, compressed, compressionLevel);
 

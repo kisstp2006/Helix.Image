@@ -7,3 +7,12 @@
 [submodule "External/Helix.Core"]
 	path = External/Helix.Core
 	url = https://github.com/kisstp2006/Helix.Core
+[submodule "External/Helix.Platform"]
+	path = External/Helix.Platform
+	url = https://github.com/kisstp2006/Helix.Platform
+[submodule "External/Helix.Profiler"]
+	path = External/Helix.Profiler
+	url = https://github.com/kisstp2006/Helix.Profiler
+[submodule "External/Helix.Jobs"]
+	path = External/Helix.Jobs
+	url = https://github.com/kisstp2006/Helix.Jobs

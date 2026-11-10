@@ -6,7 +6,10 @@ if(NOT COMMAND helix_add_library)
 endif()
 
 helix_require(Core)
-helix_add_library(helix_image ALIAS Image PUBLIC_DEPS Helix::Core)
+helix_require(Platform)
+helix_require(Profiler)
+helix_require(Jobs)
+helix_add_library(helix_image ALIAS Image PUBLIC_DEPS Helix::Core PRIVATE_DEPS Helix::Jobs)
 
-helix_add_test_suite(helix_image_tests DEPS Helix::Image)
-helix_add_benchmark_suite(helix_image_bench DEPS Helix::Image)
+helix_add_test_suite(helix_image_tests DEPS Helix::Image Helix::Jobs)
+helix_add_benchmark_suite(helix_image_bench DEPS Helix::Image Helix::Jobs)

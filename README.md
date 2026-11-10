@@ -19,6 +19,10 @@ Image codecs and compression of the Helix engine, written from the specification
 - Encoder: LZ77 with hash chains (depth by level 1 to 9) and lazy matching from level 4; every block is written as stored,
   fixed or dynamic Huffman, whichever is smallest, with length limited codes.
 
+- Inputs of 512 KB and more are cut into 256 KB chunks that compress as separate jobs on Helix.Jobs, each using the 32 KB
+  before it as dictionary. The cut depends only on the size, so the output is identical with any number of workers; without an
+  initialized job system the chunks run on the calling thread. Decoding is sequential by nature of the format.
+
 ## PNG
 
 ```cpp
@@ -37,6 +41,8 @@ helix::image::EncodePng(image, file);
 
 512 x 512 RGBA gradient, release build, Ryzen 7 3750H: encode about 12 ms, decode about 3 ms. Deflate and inflate run at
 the speed of zlib level 6 on 1 MB of mixed data.
+With 7 workers a 2048 x 2048 image encodes about 3.6 times faster (row filters and deflate chunks run as jobs) and 4 MB
+deflate about 5 times faster than on one thread.
 
 ## Build
 

@@ -1,6 +1,8 @@
 #include <Helix/Image/Compression/Deflate.h>
 #include <Helix/Image/Compression/Implementation/DeflateTables.h>
 
+#include <Helix/Jobs/Jobs.h>
+
 #include <bit>
 #include <cstring>
 
@@ -374,13 +376,16 @@ namespace helix::image
                 }
             }
 
-            void Run(int level)
+            // Compresses [begin, size) of the input; earlier bytes only serve as the match dictionary.
+            // A chunk that is not final ends on a byte boundary so chunks can be concatenated.
+            void Run(int level, usize begin, bool final)
             {
                 for (u32 len = kMinMatch; len <= kMaxMatch; len++)
                     lengthCodes[len] = u8(LengthCode(len));
-                if (level <= 0 || size < kMinMatch)
+                if (level <= 0 || size - begin < kMinMatch)
                 {
-                    WriteStored(0, size, true);
+                    if (size > begin || final)
+                        WriteStored(begin, size, final);
                     return;
                 }
                 static constexpr u32 kChain[10] = {0, 4, 8, 16, 32, 64, 128, 256, 1024, 4096};
@@ -442,9 +447,11 @@ namespace helix::image
                     return best >= kMinMatch ? best : 0;
                 };
 
+                for (usize j = begin > kWindow ? begin - kWindow : 0; j < begin; j++)
+                    insert(j);
                 Array<Token> tokens;
-                usize blockStart = 0;
-                usize i = 0;
+                usize blockStart = begin;
+                usize i = begin;
                 while (i < size)
                 {
                     u32 dist = 0;
@@ -477,23 +484,72 @@ namespace helix::image
                     }
                     if (tokens.Size() >= kBlockTokens)
                     {
-                        WriteBlock(tokens, blockStart, i, i >= size);
+                        WriteBlock(tokens, blockStart, i, final && i >= size);
                         tokens.Clear();
                         blockStart = i;
                     }
                 }
-                if (!tokens.Empty() || blockStart == 0)
-                    WriteBlock(tokens, blockStart, size, true);
+                if (!tokens.Empty() || blockStart == begin)
+                    WriteBlock(tokens, blockStart, size, final);
+                if (!final)
+                {
+                    // An empty stored block pads to the next byte without ending the stream.
+                    w.Put(0, 3);
+                    w.Align();
+                    w.Put(0, 16);
+                    w.Put(0xFFFF, 16);
+                }
                 w.Align();
             }
         };
     }
 
+    namespace
+    {
+        // Large inputs are cut into chunks that compress independently, each using the 32 KB before it as dictionary.
+        // The cut depends only on the input size, so the output is the same with any number of workers.
+        constexpr usize kChunkSize = 256 * 1024;
+
+        struct ChunkContext
+        {
+            const u8* data;
+            usize size;
+            int level;
+            Array<u8>* parts;
+            u32 count;
+        };
+
+        void CompressChunks(void* user, u32 begin, u32 end)
+        {
+            const ChunkContext& c = *static_cast<const ChunkContext*>(user);
+            for (u32 i = begin; i < end; i++)
+            {
+                usize from = usize(i) * kChunkSize;
+                usize to = i + 1 == c.count ? c.size : from + kChunkSize;
+                Encoder e{BitWriter{c.parts[i]}, c.data, to, {}};
+                e.Run(c.level, from, i + 1 == c.count);
+            }
+        }
+    }
+
     void Deflate(Span<const u8> in, Array<u8>& out, int level)
     {
-        Encoder e{BitWriter{out}, in.Data(), in.Size(), {}};
-        e.Run(level);
-        e.w.Align();
+        if (in.Size() < 2 * kChunkSize)
+        {
+            Encoder e{BitWriter{out}, in.Data(), in.Size(), {}};
+            e.Run(level, 0, true);
+            return;
+        }
+        u32 count = u32((in.Size() + kChunkSize - 1) / kChunkSize);
+        Array<Array<u8>> parts;
+        parts.Resize(count);
+        ChunkContext context{in.Data(), in.Size(), level, parts.Data(), count};
+        if (jobs::IsInitialized())
+            jobs::Complete(jobs::ScheduleParallelFor(&CompressChunks, &context, count, 1));
+        else
+            CompressChunks(&context, 0, count);
+        for (const Array<u8>& part : parts)
+            out.Append(part.Data(), part.Size());
     }
 
     void ZlibCompress(Span<const u8> in, Array<u8>& out, int level)

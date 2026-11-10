@@ -2,6 +2,7 @@
 
 #include <Helix/Core/Hashing/Hash.h>
 #include <Helix/Image/Compression/Deflate.h>
+#include <Helix/Jobs/Jobs.h>
 #include <Helix/Testing/Test.h>
 
 #include <cstdio>
@@ -107,4 +108,23 @@ HX_TEST(Deflate, RejectsCorruptStreams)
         survived += ZlibDecompress(bad, out) ? 1 : 0;
     }
     HX_CHECK_EQ(survived, 0u);
+}
+
+HX_TEST(Deflate, ChunkedOutputIsIdenticalWithAndWithoutWorkers)
+{
+    Array<u8> input = Pattern(1500000, 2);
+    for (usize i = 0; i < input.Size(); i += 97)
+        input[i] = u8(i >> 3);
+    Array<u8> serial, parallel, unpacked;
+    ZlibCompress(input, serial, 6);
+    jobs::Initialize();
+    ZlibCompress(input, parallel, 6);
+    jobs::Shutdown();
+    HX_CHECK_EQ(serial.Size(), parallel.Size());
+    HX_CHECK(std::memcmp(serial.Data(), parallel.Data(), serial.Size()) == 0);
+    HX_REQUIRE(ZlibDecompress(parallel, unpacked));
+    HX_REQUIRE(unpacked.Size() == input.Size());
+    HX_CHECK(std::memcmp(unpacked.Data(), input.Data(), input.Size()) == 0);
+    // Matches may reach into the previous chunk, so cutting into chunks costs little.
+    std::printf("    chunked %zu bytes\n", parallel.Size());
 }

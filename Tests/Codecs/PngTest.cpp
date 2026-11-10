@@ -2,6 +2,7 @@
 
 #include <Helix/Core/Hashing/Hash.h>
 #include <Helix/Image/Codecs/Png.h>
+#include <Helix/Jobs/Jobs.h>
 #include <Helix/Testing/Test.h>
 
 #include <cstdio>
@@ -67,4 +68,22 @@ HX_TEST(Png, RejectsDamagedFiles)
     HX_CHECK(!DecodePng(bad, out));
     HX_CHECK(!DecodePng(Span<const u8>(file.Data(), 30), out));
     HX_CHECK(!DecodePng(Span<const u8>(file.Data(), 4), out));
+}
+
+HX_TEST(Png, LargeImageEncodesTheSameOnWorkers)
+{
+    Image src;
+    src.Allocate(700, 500, ImageFormat::RGBA8);
+    for (usize i = 0; i < src.pixels.Size(); i++)
+        src.pixels[i] = u8((i * 13) ^ (i / 2800 * 5) ^ (i >> 9));
+    Array<u8> serial, parallel;
+    EncodePng(src, serial);
+    jobs::Initialize();
+    EncodePng(src, parallel);
+    jobs::Shutdown();
+    HX_CHECK_EQ(serial.Size(), parallel.Size());
+    HX_CHECK(std::memcmp(serial.Data(), parallel.Data(), serial.Size()) == 0);
+    Image back;
+    HX_REQUIRE(DecodePng(parallel, back));
+    HX_CHECK(std::memcmp(back.pixels.Data(), src.pixels.Data(), src.pixels.Size()) == 0);
 }
