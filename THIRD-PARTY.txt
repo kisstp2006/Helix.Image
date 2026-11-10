@@ -36,3 +36,10 @@ ThirdParty/stb_image_write/stb_image_write.h
   SHA-256: cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05
   Used for JPG and TGA (Source/Helix/Image/Codecs/Implementation/StbEncoders.cpp). The file is unchanged.
   Of its two licenses, Helix uses alternative B, the public domain dedication quoted above (the same text).
+
+ThirdParty/stb_dxt/stb_dxt.h
+  stb_dxt v1.12 by Fabian "ryg" Giesen and Sean Barrett, http://nothings.org/stb
+  Source: https://raw.githubusercontent.com/nothings/stb/master/stb_dxt.h (2026-11-10)
+  SHA-256: 807667ef98e0fd749cdb65cca0c2d980bc148109d2fed6f1873c81ae0f449933
+  Used for the color block of BC1, BC2 and BC3 (Source/Helix/Image/Texture/Implementation/BcEncoders.cpp). The file is
+  unchanged. Of its two licenses, Helix uses alternative B, the public domain dedication quoted above (the same text).
