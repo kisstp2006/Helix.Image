@@ -46,9 +46,11 @@ namespace helix::image
         }
 
         // Undoes the per row filters of one (sub)image in place; rows are prefixed by their filter type byte.
-        bool Unfilter(u8* data, u32 rows, usize rowBytes, u32 bpp)
+        // `zeroRow` stands in for the row above the first one, so the loops need no per byte edge checks.
+        bool Unfilter(u8* data, u32 rows, usize rowBytes, u32 bpp, const u8* zeroRow)
         {
-            u8* prior = nullptr;
+            const u8* prior = zeroRow;
+            usize head = Min<usize>(bpp, rowBytes);
             for (u32 y = 0; y < rows; y++)
             {
                 u8* row = data + y * (rowBytes + 1);
@@ -62,23 +64,20 @@ namespace helix::image
                         cur[i] = u8(cur[i] + cur[i - bpp]);
                     break;
                 case 2:
-                    if (prior)
-                        for (usize i = 0; i < rowBytes; i++)
-                            cur[i] = u8(cur[i] + prior[i]);
+                    for (usize i = 0; i < rowBytes; i++)
+                        cur[i] = u8(cur[i] + prior[i]);
                     break;
                 case 3:
-                    for (usize i = 0; i < rowBytes; i++)
-                    {
-                        u32 left = i >= bpp ? cur[i - bpp] : 0, up = prior ? prior[i] : 0;
-                        cur[i] = u8(cur[i] + ((left + up) >> 1));
-                    }
+                    for (usize i = 0; i < head; i++)
+                        cur[i] = u8(cur[i] + (prior[i] >> 1));
+                    for (usize i = bpp; i < rowBytes; i++)
+                        cur[i] = u8(cur[i] + ((u32(cur[i - bpp]) + prior[i]) >> 1));
                     break;
                 case 4:
-                    for (usize i = 0; i < rowBytes; i++)
-                    {
-                        u8 left = i >= bpp ? cur[i - bpp] : 0, up = prior ? prior[i] : 0, corner = prior && i >= bpp ? prior[i - bpp] : 0;
-                        cur[i] = u8(cur[i] + Paeth(left, up, corner));
-                    }
+                    for (usize i = 0; i < head; i++)
+                        cur[i] = u8(cur[i] + prior[i]);
+                    for (usize i = bpp; i < rowBytes; i++)
+                        cur[i] = u8(cur[i] + Paeth(cur[i - bpp], prior[i], prior[i - bpp]));
                     break;
                 default: return false;
                 }
@@ -124,6 +123,23 @@ namespace helix::image
             // Writes `count` pixels of an unfiltered row to RGBA at dst, every `step` pixels.
             bool Convert(const u8* row, u32 count, u8* dst, usize step) const
             {
+                // The common 8 bit layouts skip the generic sample reader.
+                if (h.depth == 8 && h.colorType == 6 && step == 4)
+                {
+                    std::memcpy(dst, row, usize(count) * 4);
+                    return true;
+                }
+                if (h.depth == 8 && h.colorType == 2 && trnsSize < 6)
+                {
+                    for (u32 x = 0; x < count; x++, dst += step, row += 3)
+                    {
+                        dst[0] = row[0];
+                        dst[1] = row[1];
+                        dst[2] = row[2];
+                        dst[3] = 255;
+                    }
+                    return true;
+                }
                 for (u32 x = 0; x < count; x++, dst += step)
                 {
                     u32 base = x * h.channels;
@@ -257,11 +273,13 @@ namespace helix::image
             return false;
 
         out.Allocate(h.width, h.height, ImageFormat::RGBA8);
+        Array<u8> zeroRow;
+        zeroRow.Resize(rowBytes(h.width));
         Converter conv{h, palette, paletteSize, trns, trnsSize};
         if (!h.interlace)
         {
             usize rb = rowBytes(h.width);
-            if (!Unfilter(raw.Data(), h.height, rb, bpp))
+            if (!Unfilter(raw.Data(), h.height, rb, bpp, zeroRow.Data()))
                 return false;
             for (u32 y = 0; y < h.height; y++)
                 if (!conv.Convert(raw.Data() + y * (rb + 1) + 1, h.width, out.pixels.Data() + usize(y) * h.width * 4, 4))
@@ -275,7 +293,7 @@ namespace helix::image
             if (!w || !hh)
                 continue;
             usize rb = rowBytes(w);
-            if (!Unfilter(pass, hh, rb, bpp))
+            if (!Unfilter(pass, hh, rb, bpp, zeroRow.Data()))
                 return false;
             for (u32 y = 0; y < hh; y++)
             {

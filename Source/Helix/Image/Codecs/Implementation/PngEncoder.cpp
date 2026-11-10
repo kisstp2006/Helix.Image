@@ -31,19 +31,44 @@ namespace helix::image
             PutBe32(out, Crc32(out.Data() + start, length + 4));
         }
 
-        // Applies one filter type to a row; returns the sum of absolute signed residuals, the usual cost heuristic.
-        u64 FilterRow(u8 type, const u8* cur, const u8* prior, usize n, u32 bpp, u8* dst)
+        u64 Cost(const u8* row, usize n)
         {
             u64 cost = 0;
             for (usize i = 0; i < n; i++)
-            {
-                u8 left = i >= bpp ? cur[i - bpp] : 0, up = prior ? prior[i] : 0, corner = prior && i >= bpp ? prior[i - bpp] : 0;
-                u8 predict = type == 0 ? 0 : type == 1 ? left : type == 2 ? up : type == 3 ? u8((u32(left) + up) >> 1) : Paeth(left, up, corner);
-                u8 v = u8(cur[i] - predict);
-                dst[i] = v;
-                cost += v < 128 ? v : 256 - v;
-            }
+                cost += row[i] < 128 ? row[i] : 256 - row[i];
             return cost;
+        }
+
+        // Applies one filter type to a row (prior is a zero row for the first one) and returns the sum of absolute signed
+        // residuals, the usual cost heuristic. Each type has its own loop without per byte edge checks.
+        u64 FilterRow(u8 type, const u8* cur, const u8* prior, usize n, u32 bpp, u8* dst)
+        {
+            switch (type)
+            {
+            case 0: std::memcpy(dst, cur, n); break;
+            case 1:
+                std::memcpy(dst, cur, bpp);
+                for (usize i = bpp; i < n; i++)
+                    dst[i] = u8(cur[i] - cur[i - bpp]);
+                break;
+            case 2:
+                for (usize i = 0; i < n; i++)
+                    dst[i] = u8(cur[i] - prior[i]);
+                break;
+            case 3:
+                for (usize i = 0; i < bpp; i++)
+                    dst[i] = u8(cur[i] - (prior[i] >> 1));
+                for (usize i = bpp; i < n; i++)
+                    dst[i] = u8(cur[i] - ((u32(cur[i - bpp]) + prior[i]) >> 1));
+                break;
+            default:
+                for (usize i = 0; i < bpp; i++)
+                    dst[i] = u8(cur[i] - prior[i]);
+                for (usize i = bpp; i < n; i++)
+                    dst[i] = u8(cur[i] - Paeth(cur[i - bpp], prior[i], prior[i - bpp]));
+                break;
+            }
+            return Cost(dst, n);
         }
     }
 
@@ -54,12 +79,13 @@ namespace helix::image
         usize rowBytes = image.RowBytes();
         Array<u8> filtered;
         filtered.Resize((rowBytes + 1) * image.height);
-        Array<u8> trial;
+        Array<u8> trial, zeroRow;
         trial.Resize(rowBytes);
+        zeroRow.Resize(rowBytes);
         for (u32 y = 0; y < image.height; y++)
         {
             const u8* cur = image.pixels.Data() + y * rowBytes;
-            const u8* prior = y ? cur - rowBytes : nullptr;
+            const u8* prior = y ? cur - rowBytes : zeroRow.Data();
             u8* dst = filtered.Data() + y * (rowBytes + 1);
             u64 best = ~0ull;
             for (u8 type = 0; type < 5; type++)

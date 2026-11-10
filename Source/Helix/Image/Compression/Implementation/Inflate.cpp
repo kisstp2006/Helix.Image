@@ -127,8 +127,7 @@ namespace helix::image
             usize size = out.Size();
             if (distance > size - start)
                 return false;
-            out.Resize(size + length);
-            u8* dst = out.Data() + size;
+            u8* dst = out.AppendUninitialized(length);
             const u8* src = dst - distance;
             if (distance >= length)
                 std::memcpy(dst, src, length);
@@ -157,11 +156,16 @@ namespace helix::image
                         ok = false;
                         break;
                     }
-                    usize at = out.Size();
-                    out.Resize(at + len);
-                    for (u32 i = 0; i < len; i++)
-                        out[at + i] = u8(r.Get(8));
-                    ok = !r.Overrun();
+                    usize from = r.Consumed();
+                    if (from + len > r.size)
+                    {
+                        ok = false;
+                        break;
+                    }
+                    out.Append(r.data + from, len);
+                    r.pos = from + len;
+                    r.bits = 0;
+                    r.count = 0;
                     continue;
                 }
                 u8 lengths[288 + 32];

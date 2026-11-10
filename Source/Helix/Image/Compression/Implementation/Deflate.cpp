@@ -161,12 +161,28 @@ namespace helix::image
             return c;
         }
 
-        u32 DistanceCode(u32 distance)
+        // Distances 1..256 index the first half directly, larger ones by (distance - 1) >> 7 in the second half.
+        struct DistanceTable
         {
-            u32 c = 0;
-            while (c < 29 && kDistBase[c + 1] <= distance)
-                c++;
-            return c;
+            u8 codes[512];
+            DistanceTable()
+            {
+                for (u32 i = 0; i < 512; i++)
+                {
+                    u32 distance = i < 256 ? i + 1 : ((i - 256) << 7) + 1;
+                    u32 c = 0;
+                    while (c < 29 && kDistBase[c + 1] <= distance)
+                        c++;
+                    codes[i] = u8(c);
+                }
+            }
+        };
+
+        const DistanceTable distanceTable;
+
+        inline u32 DistanceCode(u32 distance)
+        {
+            return distance <= 256 ? distanceTable.codes[distance - 1] : distanceTable.codes[256 + ((distance - 1) >> 7)];
         }
 
         struct Encoder
@@ -187,8 +203,7 @@ namespace helix::image
                     w.Align();
                     w.Put(u32(n), 16);
                     w.Put(u32(n) ^ 0xFFFF, 16);
-                    for (usize i = 0; i < n; i++)
-                        w.Put(data[begin + i], 8);
+                    w.out.Append(data + begin, n);
                     begin += n;
                 } while (begin < end);
             }
