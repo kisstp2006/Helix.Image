@@ -122,24 +122,17 @@ namespace helix::image
             }
         };
 
-        bool CopyMatch(Array<u8>& out, usize start, u32 length, u32 distance)
-        {
-            usize size = out.Size();
-            if (distance > size - start)
-                return false;
-            u8* dst = out.AppendUninitialized(length);
-            const u8* src = dst - distance;
-            if (distance >= length)
-                std::memcpy(dst, src, length);
-            else
-                for (u32 i = 0; i < length; i++)
-                    dst[i] = src[i];
-            return true;
-        }
-
         bool InflateBlocks(Reader& r, Array<u8>& out)
         {
             usize start = out.Size();
+            // The symbol loop writes through `base` into space appended in large steps; `written` is the real size.
+            usize written = start, space = start;
+            u8* base = out.Data();
+            auto grow = [&](usize needed) {
+                out.AppendUninitialized(Max<usize>(needed, out.Size() / 2 + 65536));
+                space = out.Size();
+                base = out.Data();
+            };
             Huffman* lit = New<Huffman>(HeapAllocator());
             Huffman* dist = New<Huffman>(HeapAllocator());
             bool ok = true;
@@ -163,6 +156,8 @@ namespace helix::image
                         break;
                     }
                     out.Append(r.data + from, len);
+                    written = space = out.Size();
+                    base = out.Data();
                     r.pos = from + len;
                     r.bits = 0;
                     r.count = 0;
@@ -226,7 +221,9 @@ namespace helix::image
                     }
                     if (sym < 256)
                     {
-                        out.Push(u8(sym));
+                        if (written == space)
+                            grow(1);
+                        base[written++] = u8(sym);
                         continue;
                     }
                     if (sym == 256)
@@ -245,12 +242,24 @@ namespace helix::image
                         break;
                     }
                     u32 distance = kDistBase[d] + r.Get(kDistExtra[d]);
-                    if (!CopyMatch(out, start, length, distance))
+                    if (distance > written - start)
                     {
                         ok = false;
                         break;
                     }
+                    if (written + length > space)
+                        grow(length);
+                    u8* dst = base + written;
+                    const u8* src = dst - distance;
+                    if (distance >= length)
+                        std::memcpy(dst, src, length);
+                    else
+                        for (u32 i = 0; i < length; i++)
+                            dst[i] = src[i];
+                    written += length;
                 }
+                out.Resize(written);
+                space = written;
             }
             Delete(HeapAllocator(), lit);
             Delete(HeapAllocator(), dist);

@@ -1,6 +1,7 @@
 #include <Helix/Image/Compression/Deflate.h>
 #include <Helix/Image/Compression/Implementation/DeflateTables.h>
 
+#include <bit>
 #include <cstring>
 
 namespace helix::image
@@ -411,9 +412,23 @@ namespace helix::image
                             break;
                         if (data[c + best] == data[i + best])
                         {
+                            // Compare eight bytes at a time; the first differing byte comes from the lowest set bit.
                             u32 len = 0;
-                            while (len < limit && data[c + len] == data[i + len])
-                                len++;
+                            while (len + 8 <= limit)
+                            {
+                                u64 x, y;
+                                std::memcpy(&x, data + c + len, 8);
+                                std::memcpy(&y, data + i + len, 8);
+                                if (x != y)
+                                {
+                                    len += u32(std::countr_zero(x ^ y) >> 3);
+                                    break;
+                                }
+                                len += 8;
+                            }
+                            if (len + 8 > limit)
+                                while (len < limit && data[c + len] == data[i + len])
+                                    len++;
                             if (len > best)
                             {
                                 best = len;
