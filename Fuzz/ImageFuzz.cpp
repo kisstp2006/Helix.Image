@@ -1,10 +1,13 @@
 #include <Generated/TestImages.h>
+#include <Support/ExrWriter.h>
 #include <Support/HdrTiffWriters.h>
 #include <Support/ImageWriters.h>
 #include <Support/TestVectors.h>
 
 #include <Helix/Image/Codecs/ImageDecoder.h>
 #include <Helix/Testing/Fuzz.h>
+
+#include <cstring>
 
 using namespace helix;
 using namespace helix::image;
@@ -110,4 +113,33 @@ HX_FUZZ(Tiff)
     for (u32 i = 0; i < 17 * 9 * o.samples; i++)
         values.Push((i * 29) & (o.bits == 16 ? 0xFFFFu : 0xFFu));
     return DecodeMutated(round, WriteTiff(values, 17, 9, o), "tif");
+}
+
+HX_FUZZ(Exr)
+{
+    Array<ExrChannel> channels;
+    u32 type = round.Below(3);
+    channels.Push({"B", type});
+    channels.Push({"G", type});
+    channels.Push({"R", type});
+    Array<u32> samples;
+    for (u32 i = 0; i < 19 * 18 * 3; i++)
+        samples.Push(type == 1 ? 0x3C00u + (i % 5) * 64 : (i % 9) * 0x01010101u);
+    ExrOptions o;
+    // PIZ has no writer yet: the other compressions, with the byte that names it changed by the mutations.
+    o.compression = round.Below(4);
+    o.tiled = round.Below(3) == 0;
+    Array<u8> file = WriteExr(channels, samples, 19, 18, o);
+    if (round.Below(3) == 0)
+    {
+        // Calls the data PIZ, so the PIZ reader gets damaged input of every kind.
+        static constexpr char kName[] = "compression";
+        for (usize i = 0; i + 32 < file.Size(); i++)
+            if (std::memcmp(file.Data() + i, kName, sizeof(kName)) == 0 && std::memcmp(file.Data() + i + sizeof(kName), kName, sizeof(kName)) == 0)
+            {
+                file[i + 2 * sizeof(kName) + 4] = 4;
+                break;
+            }
+    }
+    return DecodeMutated(round, file, "exr");
 }

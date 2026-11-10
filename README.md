@@ -50,6 +50,7 @@ block, ordered layer, face, mip, with a table of offsets and sizes. Damaged file
 | GIF | stb_image | RGBA8, one array layer per frame, `frameDelays` in milliseconds |
 | HDR (Radiance RGBE) | own | RGB32Float, linear; flat, old and per channel run length scanlines, both orientations |
 | TIFF | own | RGBA8, RGBA16 or RGBA32Float; strips and tiles, chunky and planar, none / PackBits / LZW / Deflate, horizontal and float predictors, gray, RGB, palette, alpha |
+| EXR | own | RGBA16Float when every used channel is half, else RGBA32Float; linear; scanline and tiled (first level), NONE, RLE, ZIPS, ZIP, PIZ; R, G, B, A, layer prefixed names or Y |
 
 ## PNG
 
