@@ -1,5 +1,6 @@
 #include <Helix/Image/Codecs/Png.h>
 #include <Helix/Image/Compression/Deflate.h>
+#include <Helix/Image/Texture/Mipmaps.h>
 #include <Helix/Jobs/Jobs.h>
 #include <Helix/Testing/Bench.h>
 
@@ -157,5 +158,49 @@ HX_BENCH(PngEncode2048OneThread)
         Array<u8> file;
         EncodePng(image, file);
         testing::DoNotOptimize(file.Data());
+    }
+}
+
+namespace
+{
+    TextureData MipSource()
+    {
+        TextureData t;
+        t.Allocate(PixelFormat::RGBA8, 4096, 4096);
+        for (usize i = 0; i < t.data.Size(); i++)
+            t.data[i] = u8((i >> 2) % 4096 / 16 + ((i * 7) & 3));
+        return t;
+    }
+}
+
+HX_BENCH(Mips4096OnWorkers)
+{
+    TextureData source = MipSource();
+    MipmapSettings settings;
+    settings.srgb = true;
+    jobs::Initialize();
+    state.SetItemsPerIteration(4096 * 4096);
+    while (state.KeepRunning())
+    {
+        TextureData out;
+        String error;
+        GenerateMipmaps(source, settings, out, error);
+        testing::DoNotOptimize(out.data.Data());
+    }
+    jobs::Shutdown();
+}
+
+HX_BENCH(Mips4096OneThread)
+{
+    TextureData source = MipSource();
+    MipmapSettings settings;
+    settings.srgb = true;
+    state.SetItemsPerIteration(4096 * 4096);
+    while (state.KeepRunning())
+    {
+        TextureData out;
+        String error;
+        GenerateMipmaps(source, settings, out, error);
+        testing::DoNotOptimize(out.data.Data());
     }
 }

@@ -14,6 +14,9 @@ specifications; JPEG, BMP, TGA, PSD and GIF are read with the public domain stb_
 | `Source/Helix/Image/Codecs/ImageDecoder.h` | `DecodeImage` and the decoder registry (`RegisterImageDecoder`, `FindImageDecoder`) |
 | `Source/Helix/Image/Codecs/ImageEncoder.h` | `EncodeImage`, `EncodeOptions` (JPG quality, `ExrFlags`) and the encoder registry |
 | `Source/Helix/Image/Texture/Convert.h` | `ConvertPixels`, `ToFloat`, `FromFloat` for every uncompressed format, `FloatToHalf`, `HalfToFloat` |
+| `Source/Helix/Image/Texture/Color.h` | sRGB and linear curves, 8 bit tables |
+| `Source/Helix/Image/Texture/Resize.h` | `Resample` (Mitchell, Bilinear, Box, Kaiser), `ResizeTexture`, `FitToMaxSize` |
+| `Source/Helix/Image/Texture/Mipmaps.h` | `GenerateMipmaps` with the importer's mip settings |
 | `Source/Helix/Image/Compression/Deflate.h` | `Inflate`, `Deflate` (RFC 1951), `ZlibDecompress`, `ZlibCompress` (RFC 1950), `Adler32` |
 | `Source/Helix/Image/Codecs/Png.h` | `DecodePng`, `EncodePng` |
 | `Tests/`, `Benchmarks/`, `Fuzz/` | Round trips, files of other encoders, damaged input, throughput, a fuzz target per decoder |
@@ -77,6 +80,26 @@ extension and added with `RegisterImageEncoder`.
 | JPG | stb_image_write | RGB at `quality` (1 to 100, 75 by default), alpha dropped |
 | TGA | stb_image_write | run length encoded RGBA, or RGB for formats without alpha |
 | EXR | own | R, G, B, A as the format has them, half or float (`ExrOutputAsFloat`), NONE, RLE (`ExrCompressRle`), ZIP (`ExrCompressZip`) or PIZ (`ExrCompressPiz`) |
+
+## Mip maps and resizing
+
+```cpp
+helix::image::MipmapSettings settings;
+settings.filter = helix::image::MipFilter::Kaiser;
+settings.srgb = true;
+settings.preserveCoverage = true;
+helix::image::GenerateMipmaps(texture, settings, withMips, error);
+```
+
+- Every level is filtered from the one above: Box (the area each texel covers, 2 x 2 when halving, 3 taps on an odd
+  side) or Kaiser (a Kaiser windowed sinc of radius 3). sRGB data is filtered in linear light.
+- `preserveCoverage` scales alpha so each level keeps the share of texels above `alphaReference`; `normalMap`
+  renormalizes; `borderMipmap` keeps the top level's edge; `fadeout` fades levels `fadeStart` to `fadeEnd` to gray
+  (to a flat normal for normal maps). The top level is copied unchanged.
+- `Resample` and `ResizeTexture` take the Mitchell (B = C = 1/3) and Bilinear filters; `FitToMaxSize` gives the size a
+  Max Size setting leaves. Rows and conversions run as jobs on Helix.Jobs with the same result as one thread.
+
+Mip chain of a 4096 x 4096 RGBA8 sRGB texture, release, Ryzen 7 3750H: 0.58 s on one thread, 0.24 s with 7 workers.
 
 ## PNG
 
