@@ -1,4 +1,5 @@
 #include <Generated/TestImages.h>
+#include <Support/ContainerWriters.h>
 #include <Support/ExrWriter.h>
 #include <Support/HdrTiffWriters.h>
 #include <Support/ImageWriters.h>
@@ -142,4 +143,46 @@ HX_FUZZ(Exr)
             }
     }
     return DecodeMutated(round, file, "exr");
+}
+
+namespace
+{
+    TextureData Shape(helix::testing::FuzzRound& round, PixelFormat format)
+    {
+        TextureData t;
+        bool cube = round.Below(4) == 0;
+        t.Allocate(format, 4 + round.Below(29), 4 + round.Below(29), 1, 1 + round.Below(3), cube ? 6 : 1, 1 + round.Below(5));
+        FillPattern(t);
+        return t;
+    }
+}
+
+HX_FUZZ(Dds)
+{
+    static constexpr u32 kMasks[5] = {32, 0xFF, 0xFF00, 0xFF0000, 0xFF000000};
+    switch (round.Below(3))
+    {
+    case 0: return DecodeMutated(round, WriteDds(Shape(round, PixelFormat::BC1), u32('D') | u32('X') << 8 | u32('T') << 16 | u32('1') << 24, 0), "dds");
+    case 1: return DecodeMutated(round, WriteDds(Shape(round, PixelFormat::BC7), 0, 98), "dds");
+    default: return DecodeMutated(round, WriteDds(Shape(round, PixelFormat::RGBA8), 0, 0, kMasks), "dds");
+    }
+}
+
+HX_FUZZ(Ktx)
+{
+    if (round.Below(2))
+        return DecodeMutated(round, WriteKtx1(Shape(round, PixelFormat::RGB8), 0x8051, 1, round.Below(2) != 0), "ktx");
+    return DecodeMutated(round, WriteKtx1(Shape(round, PixelFormat::ETC2RGBA), 0x9278, 1, false), "ktx");
+}
+
+HX_FUZZ(Ktx2)
+{
+    return DecodeMutated(round, WriteKtx2(Shape(round, round.Below(2) ? PixelFormat::BC3 : PixelFormat::RGBA16Float), round.Below(2) ? 137 : 97, round.Below(2) ? 3 : 0), "ktx2");
+}
+
+HX_FUZZ(Pvr)
+{
+    if (round.Below(2))
+        return DecodeMutated(round, WritePvr(Shape(round, PixelFormat::ASTC4x4), 27, 0, 0, 0), "pvr");
+    return DecodeMutated(round, WritePvr(Shape(round, PixelFormat::RGBA8), u32('r') | u32('g') << 8 | u32('b') << 16 | u32('a') << 24, 0x08080808, 0, 0), "pvr");
 }

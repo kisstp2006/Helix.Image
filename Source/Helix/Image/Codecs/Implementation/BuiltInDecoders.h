@@ -14,11 +14,16 @@ namespace helix::image
     const ImageDecoder& HdrImageDecoder();
     const ImageDecoder& TiffImageDecoder();
     const ImageDecoder& ExrImageDecoder();
+    const ImageDecoder& DdsImageDecoder();
+    const ImageDecoder& Ktx1ImageDecoder();
+    const ImageDecoder& Ktx2ImageDecoder();
+    const ImageDecoder& PvrImageDecoder();
 
     inline const ImageDecoder* const* BuiltInDecoders(usize& count)
     {
         static const ImageDecoder* const kDecoders[] = {&PngImageDecoder(), &JpegImageDecoder(), &BmpImageDecoder(), &PsdImageDecoder(), &GifImageDecoder(),
-                                                       &HdrImageDecoder(), &TiffImageDecoder(), &ExrImageDecoder(), &TgaImageDecoder()};
+                                                       &HdrImageDecoder(), &TiffImageDecoder(), &ExrImageDecoder(), &DdsImageDecoder(),
+                                                       &Ktx1ImageDecoder(), &Ktx2ImageDecoder(), &PvrImageDecoder(), &TgaImageDecoder()};
         count = sizeof(kDecoders) / sizeof(kDecoders[0]);
         return kDecoders;
     }

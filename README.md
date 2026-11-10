@@ -51,6 +51,9 @@ block, ordered layer, face, mip, with a table of offsets and sizes. Damaged file
 | HDR (Radiance RGBE) | own | RGB32Float, linear; flat, old and per channel run length scanlines, both orientations |
 | TIFF | own | RGBA8, RGBA16 or RGBA32Float; strips and tiles, chunky and planar, none / PackBits / LZW / Deflate, horizontal and float predictors, gray, RGB, palette, alpha |
 | EXR | own | RGBA16Float when every used channel is half, else RGBA32Float; linear; scanline and tiled (first level), NONE, RLE, ZIPS, ZIP, PIZ; R, G, B, A, layer prefixed names or Y |
+| DDS | own | the stored format: legacy FourCC and pixel masks or the DX10 header; 2D, cube, array, volume, mips |
+| KTX, KTX2 | own | the stored format; KTX rows unpadded, KTX2 supercompression none or zlib (Basis and Zstandard are errors) |
+| PVR (v3) | own | the stored format: BC, ETC2 / EAC, ASTC and uncompressed channel layouts (PVRTC is an error) |
 
 ## PNG
 
