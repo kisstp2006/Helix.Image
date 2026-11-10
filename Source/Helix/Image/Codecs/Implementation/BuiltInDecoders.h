@@ -11,11 +11,13 @@ namespace helix::image
     const ImageDecoder& TgaImageDecoder();
     const ImageDecoder& PsdImageDecoder();
     const ImageDecoder& GifImageDecoder();
+    const ImageDecoder& HdrImageDecoder();
+    const ImageDecoder& TiffImageDecoder();
 
     inline const ImageDecoder* const* BuiltInDecoders(usize& count)
     {
         static const ImageDecoder* const kDecoders[] = {&PngImageDecoder(), &JpegImageDecoder(), &BmpImageDecoder(), &PsdImageDecoder(), &GifImageDecoder(),
-                                                       &TgaImageDecoder()};
+                                                       &HdrImageDecoder(), &TiffImageDecoder(), &TgaImageDecoder()};
         count = sizeof(kDecoders) / sizeof(kDecoders[0]);
         return kDecoders;
     }

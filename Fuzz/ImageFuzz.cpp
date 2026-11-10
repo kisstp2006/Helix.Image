@@ -1,4 +1,5 @@
 #include <Generated/TestImages.h>
+#include <Support/HdrTiffWriters.h>
 #include <Support/ImageWriters.h>
 #include <Support/TestVectors.h>
 
@@ -77,4 +78,36 @@ HX_FUZZ(Tga)
 HX_FUZZ(Psd)
 {
     return DecodeMutated(round, WritePsd(Pattern(7, 4, false), 7, 4, round.Below(2) != 0), "psd");
+}
+
+HX_FUZZ(Hdr)
+{
+    Array<float> rgb;
+    for (u32 i = 0; i < 12 * 3 * 3; i++)
+        rgb.Push(float(i % 7) * 0.4f);
+    Array<u8> rgbe;
+    return DecodeMutated(round, WriteHdr(rgb, 12, 3, round.Below(2) != 0, round.Below(2) != 0, rgbe), "hdr");
+}
+
+HX_FUZZ(Tiff)
+{
+    if (round.Below(4) == 0)
+    {
+        const TestImage& t = Windows("TiffLzw");
+        return DecodeMutated(round, t.file, usize(t.fileSize), "tif");
+    }
+    static constexpr u32 kCompressions[] = {1, 8, 32773};
+    TiffOptions o;
+    o.bits = round.Below(3) == 0 ? 16 : 8;
+    o.samples = 1 + round.Below(4);
+    o.photometric = o.samples >= 3 ? 2 : 1;
+    o.compression = kCompressions[round.Below(3)];
+    o.predictor = round.Below(2) ? 2 : 1;
+    o.bigEndian = round.Below(2) != 0;
+    o.tiled = round.Below(3) == 0;
+    o.planar = round.Below(3) == 0;
+    Array<u32> values;
+    for (u32 i = 0; i < 17 * 9 * o.samples; i++)
+        values.Push((i * 29) & (o.bits == 16 ? 0xFFFFu : 0xFFu));
+    return DecodeMutated(round, WriteTiff(values, 17, 9, o), "tif");
 }
