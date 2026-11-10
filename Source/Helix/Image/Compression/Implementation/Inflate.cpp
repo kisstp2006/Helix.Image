@@ -10,6 +10,7 @@ namespace helix::image
         using namespace deflate;
 
         constexpr u32 kFastBits = 10;
+        constexpr usize kOutputSlack = 258 + 8;
 
         // Canonical Huffman decoder: a direct table for codes up to kFastBits, a counting walk for longer ones.
         struct Huffman
@@ -213,17 +214,37 @@ namespace helix::image
                 }
                 for (;;)
                 {
+                    // One symbol needs at most 48 bits and 258 bytes plus copy slack, so both are secured once here.
+                    if (written + kOutputSlack > space)
+                        grow(kOutputSlack);
+                    bool inside = r.pos + 8 <= r.size;
+                    if (inside)
+                    {
+                        u64 chunk;
+                        std::memcpy(&chunk, r.data + r.pos, 8);
+                        r.bits |= chunk << r.count;
+                        r.pos += (63 - r.count) >> 3;
+                        r.count |= 56;
+                    }
                     i32 sym = r.Decode(*lit);
-                    if (sym < 0 || r.Overrun())
+                    if (sym < 0 || (!inside && r.Overrun()))
                     {
                         ok = false;
                         break;
                     }
                     if (sym < 256)
                     {
-                        if (written == space)
-                            grow(1);
                         base[written++] = u8(sym);
+                        // The refill left enough bits for two more short literals without touching the input.
+                        for (int extra = 0; inside && extra < 2; extra++)
+                        {
+                            u16 e = lit->fast[r.bits & ((1u << kFastBits) - 1)];
+                            if (!e || (e & 511) >= 256)
+                                break;
+                            r.bits >>= e >> 9;
+                            r.count -= e >> 9;
+                            base[written++] = u8(e);
+                        }
                         continue;
                     }
                     if (sym == 256)
@@ -247,12 +268,16 @@ namespace helix::image
                         ok = false;
                         break;
                     }
-                    if (written + length > space)
-                        grow(length);
                     u8* dst = base + written;
                     const u8* src = dst - distance;
-                    if (distance >= length)
-                        std::memcpy(dst, src, length);
+                    if (distance >= 8)
+                    {
+                        // Eight bytes per step; the last step may write up to seven bytes of slack past the match.
+                        for (u32 i = 0; i < length; i += 8)
+                            std::memcpy(dst + i, src + i, 8);
+                    }
+                    else if (distance == 1)
+                        std::memset(dst, src[0], length);
                     else
                         for (u32 i = 0; i < length; i++)
                             dst[i] = src[i];

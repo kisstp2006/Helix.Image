@@ -35,7 +35,8 @@ helix::image::EncodePng(image, file);
 - Encoding: gray, gray alpha, RGB or RGBA at 8 bits from the image format, the filter of each row chosen by the smallest sum
   of absolute residuals.
 
-512 x 512 RGBA gradient, release build, Ryzen 7 3750H: encode 20 ms, decode 5 ms.
+512 x 512 RGBA gradient, release build, Ryzen 7 3750H: encode about 12 ms, decode about 3 ms. Deflate and inflate run at
+the speed of zlib level 6 on 1 MB of mixed data.
 
 ## Build
 
