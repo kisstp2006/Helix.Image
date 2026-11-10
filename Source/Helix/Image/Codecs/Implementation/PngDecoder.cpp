@@ -1,3 +1,4 @@
+#include <Helix/Image/Codecs/Implementation/BuiltInDecoders.h>
 #include <Helix/Image/Codecs/Implementation/PngCommon.h>
 #include <Helix/Image/Codecs/Png.h>
 #include <Helix/Image/Compression/Deflate.h>
@@ -86,6 +87,8 @@ namespace helix::image
             return true;
         }
 
+        // Turns unfiltered rows into RGBA samples of T: u8, or u16 for 16 bit files.
+        template <typename T>
         struct Converter
         {
             const Header& h;
@@ -106,39 +109,46 @@ namespace helix::image
                 }
             }
 
-            u8 To8(u32 v) const
+            static constexpr u32 kMax = sizeof(T) == 1 ? 255u : 65535u;
+
+            T Out(u32 v) const
             {
                 switch (h.depth)
                 {
-                case 1: return v ? 255 : 0;
-                case 2: return u8(v * 85);
-                case 4: return u8(v * 17);
-                case 8: return u8(v);
-                default: return u8((v * 255 + 32895) >> 16);
+                case 1: return T(v ? kMax : 0);
+                case 2: return T(v * (kMax / 3));
+                case 4: return T(v * (kMax / 15));
+                case 8: return T(sizeof(T) == 1 ? v : v * 257);
+                default: return T(sizeof(T) == 1 ? (v * 255 + 32895) >> 16 : v);
                 }
             }
+
+            T From8(u8 v) const { return T(sizeof(T) == 1 ? v : v * 257u); }
 
             u32 TrnsSample(u32 i) const { return trnsSize >= 2 * (i + 1) ? (u32(trns[2 * i]) << 8) | trns[2 * i + 1] : 0x10000; }
 
             // Writes `count` pixels of an unfiltered row to RGBA at dst, every `step` pixels.
-            bool Convert(const u8* row, u32 count, u8* dst, usize step) const
+            bool Convert(const u8* row, u32 count, T* dst, usize step) const
             {
                 // The common 8 bit layouts skip the generic sample reader.
-                if (h.depth == 8 && h.colorType == 6 && step == 4)
+                if constexpr (sizeof(T) == 1)
                 {
-                    std::memcpy(dst, row, usize(count) * 4);
-                    return true;
-                }
-                if (h.depth == 8 && h.colorType == 2 && trnsSize < 6)
-                {
-                    for (u32 x = 0; x < count; x++, dst += step, row += 3)
+                    if (h.depth == 8 && h.colorType == 6 && step == 4)
                     {
-                        dst[0] = row[0];
-                        dst[1] = row[1];
-                        dst[2] = row[2];
-                        dst[3] = 255;
+                        std::memcpy(dst, row, usize(count) * 4);
+                        return true;
                     }
-                    return true;
+                    if (h.depth == 8 && h.colorType == 2 && trnsSize < 6)
+                    {
+                        for (u32 x = 0; x < count; x++, dst += step, row += 3)
+                        {
+                            dst[0] = row[0];
+                            dst[1] = row[1];
+                            dst[2] = row[2];
+                            dst[3] = 255;
+                        }
+                        return true;
+                    }
                 }
                 for (u32 x = 0; x < count; x++, dst += step)
                 {
@@ -148,17 +158,17 @@ namespace helix::image
                     case 0:
                     {
                         u32 g = Sample(row, base);
-                        dst[0] = dst[1] = dst[2] = To8(g);
-                        dst[3] = trnsSize >= 2 && g == TrnsSample(0) ? 0 : 255;
+                        dst[0] = dst[1] = dst[2] = Out(g);
+                        dst[3] = trnsSize >= 2 && g == TrnsSample(0) ? T(0) : T(kMax);
                         break;
                     }
                     case 2:
                     {
                         u32 r = Sample(row, base), g = Sample(row, base + 1), b = Sample(row, base + 2);
-                        dst[0] = To8(r);
-                        dst[1] = To8(g);
-                        dst[2] = To8(b);
-                        dst[3] = trnsSize >= 6 && r == TrnsSample(0) && g == TrnsSample(1) && b == TrnsSample(2) ? 0 : 255;
+                        dst[0] = Out(r);
+                        dst[1] = Out(g);
+                        dst[2] = Out(b);
+                        dst[3] = trnsSize >= 6 && r == TrnsSample(0) && g == TrnsSample(1) && b == TrnsSample(2) ? T(0) : T(kMax);
                         break;
                     }
                     case 3:
@@ -166,143 +176,207 @@ namespace helix::image
                         u32 i = Sample(row, base);
                         if (i >= paletteSize)
                             return false;
-                        dst[0] = palette[3 * i];
-                        dst[1] = palette[3 * i + 1];
-                        dst[2] = palette[3 * i + 2];
-                        dst[3] = i < trnsSize ? trns[i] : 255;
+                        dst[0] = From8(palette[3 * i]);
+                        dst[1] = From8(palette[3 * i + 1]);
+                        dst[2] = From8(palette[3 * i + 2]);
+                        dst[3] = i < trnsSize ? From8(trns[i]) : T(kMax);
                         break;
                     }
                     case 4:
-                        dst[0] = dst[1] = dst[2] = To8(Sample(row, base));
-                        dst[3] = To8(Sample(row, base + 1));
+                        dst[0] = dst[1] = dst[2] = Out(Sample(row, base));
+                        dst[3] = Out(Sample(row, base + 1));
                         break;
                     default:
                         for (u32 c = 0; c < 4; c++)
-                            dst[c] = To8(Sample(row, base + c));
+                            dst[c] = Out(Sample(row, base + c));
                         break;
                     }
                 }
                 return true;
             }
         };
+
+        // A PNG read up to its unfiltered rows; the pixels come from Expand.
+        struct Parsed
+        {
+            Header h;
+            u8 palette[768];
+            u32 paletteSize = 0;
+            u8 trns[256];
+            u32 trnsSize = 0;
+            Array<u8> raw;
+        };
+
+        bool Parse(Span<const u8> data, Parsed& p, String& error)
+        {
+            auto fail = [&](const char* what) {
+                error = what;
+                return false;
+            };
+            if (data.Size() < 8 || std::memcmp(data.Data(), kSignature, 8) != 0)
+                return fail("no PNG signature");
+            Header& h = p.h;
+            Array<u8> compressed;
+            bool sawHeader = false, sawEnd = false;
+            for (usize at = 8; at + 12 <= data.Size() && !sawEnd;)
+            {
+                u32 length = ReadBe32(data.Data() + at);
+                const u8* type = data.Data() + at + 4;
+                if (length > data.Size() - at - 12)
+                    return fail("a chunk runs past the end of the file");
+                const u8* body = type + 4;
+                if (Crc32(type, length + 4) != ReadBe32(body + length))
+                    return fail("a chunk checksum does not match");
+                if (std::memcmp(type, "IHDR", 4) == 0)
+                {
+                    if (length != 13)
+                        return fail("the header chunk has the wrong size");
+                    h.width = ReadBe32(body);
+                    h.height = ReadBe32(body + 4);
+                    h.depth = body[8];
+                    h.colorType = body[9];
+                    h.interlace = body[12];
+                    h.channels = Channels(h.colorType);
+                    if (!h.width || !h.height || h.width > (1u << 24) || h.height > (1u << 24) || !ValidDepth(h.colorType, h.depth) || body[10] || body[11] ||
+                        h.interlace > 1)
+                        return fail("the header describes no valid image");
+                    sawHeader = true;
+                }
+                else if (std::memcmp(type, "PLTE", 4) == 0)
+                {
+                    if (length % 3 || length > 768)
+                        return fail("the palette has the wrong size");
+                    std::memcpy(p.palette, body, length);
+                    p.paletteSize = length / 3;
+                }
+                else if (std::memcmp(type, "tRNS", 4) == 0)
+                {
+                    if (length > 256)
+                        return fail("the transparency chunk is too long");
+                    std::memcpy(p.trns, body, length);
+                    p.trnsSize = length;
+                }
+                else if (std::memcmp(type, "IDAT", 4) == 0)
+                {
+                    usize n = compressed.Size();
+                    compressed.Resize(n + length);
+                    std::memcpy(compressed.Data() + n, body, length);
+                }
+                else if (std::memcmp(type, "IEND", 4) == 0)
+                    sawEnd = true;
+                else if (!(type[0] & 0x20))
+                    return fail("an unknown critical chunk");
+                at += 12 + usize(length);
+            }
+            if (!sawHeader)
+                return fail("no header chunk");
+            if (h.colorType == 3 && !p.paletteSize)
+                return fail("a palette image without a palette");
+            if (u64(h.width) * h.height * 8 > kMaxTextureBytes)
+                return fail("the image is too large");
+
+            u32 bitsPerPixel = h.channels * h.depth;
+            auto rowBytes = [&](u32 w) { return (usize(w) * bitsPerPixel + 7) / 8; };
+            usize expected = 0;
+            if (h.interlace)
+            {
+                for (const auto& a : kAdam7)
+                {
+                    u32 w = (h.width + a[2] - 1 - a[0]) / a[2], hh = (h.height + a[3] - 1 - a[1]) / a[3];
+                    if (w && hh)
+                        expected += (rowBytes(w) + 1) * hh;
+                }
+            }
+            else
+                expected = (rowBytes(h.width) + 1) * h.height;
+            p.raw.Reserve(expected);
+            if (!ZlibDecompress(compressed, p.raw))
+                return fail("the image data does not inflate");
+            if (p.raw.Size() < expected)
+                return fail("the image data is too short");
+            return true;
+        }
+
+        template <typename T>
+        bool Expand(Parsed& p, T* pixels, String& error)
+        {
+            const Header& h = p.h;
+            u32 bitsPerPixel = h.channels * h.depth;
+            u32 bpp = Max(1u, bitsPerPixel / 8);
+            auto rowBytes = [&](u32 w) { return (usize(w) * bitsPerPixel + 7) / 8; };
+            Array<u8> zeroRow;
+            zeroRow.Resize(rowBytes(h.width));
+            Converter<T> conv{h, p.palette, p.paletteSize, p.trns, p.trnsSize};
+            auto fail = [&](const char* what) {
+                error = what;
+                return false;
+            };
+            if (!h.interlace)
+            {
+                usize rb = rowBytes(h.width);
+                if (!Unfilter(p.raw.Data(), h.height, rb, bpp, zeroRow.Data()))
+                    return fail("an unknown row filter");
+                for (u32 y = 0; y < h.height; y++)
+                    if (!conv.Convert(p.raw.Data() + y * (rb + 1) + 1, h.width, pixels + usize(y) * h.width * 4, 4))
+                        return fail("a palette index past the palette");
+                return true;
+            }
+            u8* pass = p.raw.Data();
+            for (const auto& a : kAdam7)
+            {
+                u32 w = (h.width + a[2] - 1 - a[0]) / a[2], hh = (h.height + a[3] - 1 - a[1]) / a[3];
+                if (!w || !hh)
+                    continue;
+                usize rb = rowBytes(w);
+                if (!Unfilter(pass, hh, rb, bpp, zeroRow.Data()))
+                    return fail("an unknown row filter");
+                for (u32 y = 0; y < hh; y++)
+                {
+                    T* dst = pixels + (usize(a[1] + y * a[3]) * h.width + a[0]) * 4;
+                    if (!conv.Convert(pass + y * (rb + 1) + 1, w, dst, usize(a[2]) * 4))
+                        return fail("a palette index past the palette");
+                }
+                pass += (rb + 1) * hh;
+            }
+            return true;
+        }
+
+        bool MatchesPng(Span<const u8> data) { return data.Size() >= 8 && std::memcmp(data.Data(), kSignature, 8) == 0; }
+
+        // 16 bit files keep their 16 bits (RGBA16), the others give RGBA8.
+        bool DecodePngTexture(Span<const u8> data, TextureData& out, String& error)
+        {
+            Parsed p;
+            if (!Parse(data, p, error))
+                return false;
+            bool wide = p.h.depth == 16;
+            if (!out.Allocate(wide ? PixelFormat::RGBA16 : PixelFormat::RGBA8, p.h.width, p.h.height))
+                return false;
+            if (!wide)
+                return Expand(p, out.data.Data(), error);
+            Array<u16> samples;
+            samples.Resize(usize(p.h.width) * p.h.height * 4);
+            if (!Expand(p, samples.Data(), error))
+                return false;
+            std::memcpy(out.data.Data(), samples.Data(), samples.Size() * 2);
+            return true;
+        }
     }
 
     bool DecodePng(Span<const u8> data, Image& out)
     {
-        if (data.Size() < 8 || std::memcmp(data.Data(), kSignature, 8) != 0)
+        Parsed p;
+        String error;
+        if (!Parse(data, p, error))
             return false;
-        Header h;
-        Array<u8> compressed;
-        u8 palette[768];
-        u32 paletteSize = 0;
-        u8 trns[256];
-        u32 trnsSize = 0;
-        bool sawHeader = false, sawEnd = false;
-        for (usize at = 8; at + 12 <= data.Size() && !sawEnd;)
-        {
-            u32 length = ReadBe32(data.Data() + at);
-            const u8* type = data.Data() + at + 4;
-            if (length > data.Size() - at - 12)
-                return false;
-            const u8* body = type + 4;
-            if (Crc32(type, length + 4) != ReadBe32(body + length))
-                return false;
-            if (std::memcmp(type, "IHDR", 4) == 0)
-            {
-                if (length != 13)
-                    return false;
-                h.width = ReadBe32(body);
-                h.height = ReadBe32(body + 4);
-                h.depth = body[8];
-                h.colorType = body[9];
-                h.interlace = body[12];
-                h.channels = Channels(h.colorType);
-                if (!h.width || !h.height || h.width > (1u << 24) || h.height > (1u << 24) || !ValidDepth(h.colorType, h.depth) || body[10] || body[11] ||
-                    h.interlace > 1)
-                    return false;
-                sawHeader = true;
-            }
-            else if (std::memcmp(type, "PLTE", 4) == 0)
-            {
-                if (length % 3 || length > 768)
-                    return false;
-                std::memcpy(palette, body, length);
-                paletteSize = length / 3;
-            }
-            else if (std::memcmp(type, "tRNS", 4) == 0)
-            {
-                if (length > 256)
-                    return false;
-                std::memcpy(trns, body, length);
-                trnsSize = length;
-            }
-            else if (std::memcmp(type, "IDAT", 4) == 0)
-            {
-                usize n = compressed.Size();
-                compressed.Resize(n + length);
-                std::memcpy(compressed.Data() + n, body, length);
-            }
-            else if (std::memcmp(type, "IEND", 4) == 0)
-                sawEnd = true;
-            else if (!(type[0] & 0x20))
-                return false;
-            at += 12 + usize(length);
-        }
-        if (!sawHeader || (h.colorType == 3 && !paletteSize))
-            return false;
+        out.Allocate(p.h.width, p.h.height, ImageFormat::RGBA8);
+        return Expand(p, out.pixels.Data(), error);
+    }
 
-        u32 bitsPerPixel = h.channels * h.depth;
-        u32 bpp = Max(1u, bitsPerPixel / 8);
-        auto rowBytes = [&](u32 w) { return (usize(w) * bitsPerPixel + 7) / 8; };
-        usize expected = 0;
-        if (h.interlace)
-        {
-            for (const auto& p : kAdam7)
-            {
-                u32 w = (h.width + p[2] - 1 - p[0]) / p[2], hh = (h.height + p[3] - 1 - p[1]) / p[3];
-                if (w && hh)
-                    expected += (rowBytes(w) + 1) * hh;
-            }
-        }
-        else
-            expected = (rowBytes(h.width) + 1) * h.height;
-
-        Array<u8> raw;
-        raw.Reserve(expected);
-        if (!ZlibDecompress(compressed, raw) || raw.Size() < expected)
-            return false;
-
-        out.Allocate(h.width, h.height, ImageFormat::RGBA8);
-        Array<u8> zeroRow;
-        zeroRow.Resize(rowBytes(h.width));
-        Converter conv{h, palette, paletteSize, trns, trnsSize};
-        if (!h.interlace)
-        {
-            usize rb = rowBytes(h.width);
-            if (!Unfilter(raw.Data(), h.height, rb, bpp, zeroRow.Data()))
-                return false;
-            for (u32 y = 0; y < h.height; y++)
-                if (!conv.Convert(raw.Data() + y * (rb + 1) + 1, h.width, out.pixels.Data() + usize(y) * h.width * 4, 4))
-                    return false;
-            return true;
-        }
-        u8* pass = raw.Data();
-        for (const auto& p : kAdam7)
-        {
-            u32 w = (h.width + p[2] - 1 - p[0]) / p[2], hh = (h.height + p[3] - 1 - p[1]) / p[3];
-            if (!w || !hh)
-                continue;
-            usize rb = rowBytes(w);
-            if (!Unfilter(pass, hh, rb, bpp, zeroRow.Data()))
-                return false;
-            for (u32 y = 0; y < hh; y++)
-            {
-                u8* dst = out.pixels.Data() + (usize(p[1] + y * p[3]) * h.width + p[0]) * 4;
-                if (!conv.Convert(pass + y * (rb + 1) + 1, w, dst, usize(p[2]) * 4))
-                    return false;
-            }
-            pass += (rb + 1) * hh;
-        }
-        return true;
+    const ImageDecoder& PngImageDecoder()
+    {
+        static constexpr StringView kExtensions[] = {"png"};
+        static const ImageDecoder kDecoder{"PNG", Span<const StringView>(kExtensions, 1), &MatchesPng, &DecodePngTexture};
+        return kDecoder;
     }
 }

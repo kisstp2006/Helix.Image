@@ -1,0 +1,31 @@
+Third party code in Helix.Image
+===============================
+
+ThirdParty/stb_image/stb_image.h
+  stb_image v2.30 by Sean Barrett, http://nothings.org/stb
+  Source: https://raw.githubusercontent.com/nothings/stb/master/stb_image.h (2026-11-10)
+  SHA-256: 594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3
+  Used for JPEG, BMP, TGA, PSD and GIF (Source/Helix/Image/Codecs/Implementation/StbDecoders.cpp).
+  The file is unchanged. Known faults and how the wrapper avoids them:
+  - stbi_is_16_bit does not find 16 bit PSD files outside MSVC: STBI_NOTUSED(v) is (void)sizeof(v) there, so the
+    header fields it should skip are not read. The wrapper reads the PSD depth itself.
+  - Damaged headers make it allocate huge blocks; the wrapper's allocator refuses blocks larger than any texture.
+  Of its two licenses, Helix uses alternative B:
+
+  ALTERNATIVE B - Public Domain (www.unlicense.org)
+  This is free and unencumbered software released into the public domain.
+  Anyone is free to copy, modify, publish, use, compile, sell, or distribute this
+  software, either in source code form or as a compiled binary, for any purpose,
+  commercial or non-commercial, and by any means.
+  In jurisdictions that recognize copyright laws, the author or authors of this
+  software dedicate any and all copyright interest in the software to the public
+  domain. We make this dedication for the benefit of the public at large and to
+  the detriment of our heirs and successors. We intend this dedication to be an
+  overt act of relinquishment in perpetuity of all present and future rights to
+  this software under copyright law.
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+  ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

@@ -1,15 +1,21 @@
 # Helix.Image
 
-Image codecs and compression of the Helix engine, written from the specifications without third party code.
+Image codecs and compression of the Helix engine. PNG, deflate and the other own codecs are written from the
+specifications; JPEG, BMP, TGA, PSD and GIF use the public domain stb_image (see `THIRD-PARTY.txt`).
 
 ## Contents
 
 | Path | Content |
 |---|---|
 | `Source/Helix/Image/Image/Image.h` | `Image`: 8 bit R, RG, RGB or RGBA pixels, rows top first |
+| `Source/Helix/Image/Formats/PixelFormat.h` | `PixelFormat`: 8 / 16 bit, half, float, packed, BC1 to BC7, ETC2 / EAC, ASTC; `FormatInfo`, `SurfaceBytes` |
+| `Source/Helix/Image/Texture/TextureData.h` | `TextureData`: layers, faces and mips in one block with a subresource table |
+| `Source/Helix/Image/Codecs/ImageDecoder.h` | `DecodeImage` and the decoder registry (`RegisterImageDecoder`, `FindImageDecoder`) |
 | `Source/Helix/Image/Compression/Deflate.h` | `Inflate`, `Deflate` (RFC 1951), `ZlibDecompress`, `ZlibCompress` (RFC 1950), `Adler32` |
 | `Source/Helix/Image/Codecs/Png.h` | `DecodePng`, `EncodePng` |
-| `Tests/`, `Benchmarks/` | Round trips, streams and files of other encoders, damaged input, throughput |
+| `Tests/`, `Benchmarks/`, `Fuzz/` | Round trips, files of other encoders, damaged input, throughput, a fuzz target per decoder |
+| `Tools/GenerateTestImages.ps1` | Writes JPEG, GIF, BMP and TIFF test files with the Windows imaging codecs and the pixels Windows decodes |
+| `ThirdParty/stb_image/` | stb_image v2.30, unchanged |
 | `Tools/GenerateTestVectors.py` | Writes the PNG and zlib test vectors with Python's zlib and a reference PNG writer |
 
 ## Deflate
@@ -22,6 +28,26 @@ Image codecs and compression of the Helix engine, written from the specification
 - Inputs of 512 KB and more are cut into 256 KB chunks that compress as separate jobs on Helix.Jobs, each using the 32 KB
   before it as dictionary. The cut depends only on the size, so the output is identical with any number of workers; without an
   initialized job system the chunks run on the calling thread. Decoding is sequential by nature of the format.
+
+## Decoding
+
+```cpp
+helix::image::TextureData texture;
+helix::String error;
+if (helix::image::DecodeImage(bytes, texture, error, ".tga"))
+    Upload(texture.format, texture.Pixels(), texture.width, texture.height);
+```
+
+Decoders are found by their signature, and by the extension for formats without one (TGA). A decoder is added with
+`RegisterImageDecoder` (a decoder with the same name is replaced). `TextureData` keeps every layer, face and mip in one
+block, ordered layer, face, mip, with a table of offsets and sizes. Damaged files are errors that name the problem.
+
+| Format | Decoder | Result |
+|---|---|---|
+| PNG | own | RGBA8, RGBA16 for 16 bit files |
+| JPEG, BMP, TGA | stb_image | RGBA8 |
+| PSD | stb_image | RGBA8, RGBA16 for 16 bit files (flattened composite) |
+| GIF | stb_image | RGBA8, one array layer per frame, `frameDelays` in milliseconds |
 
 ## PNG
 
