@@ -175,6 +175,38 @@ HX_TEST(ImageDecoder, ReadsGifFramesAsLayers)
     }
 }
 
+// "Restore to previous" (disposal 3): the frame after it is drawn over the frame from before it. stb_image took that
+// frame from before its frame buffer (fixed in our copy; found by AddressSanitizer on the corpus' animated GIF).
+HX_TEST(ImageDecoder, GifRestoreToPrevious)
+{
+    const u8 colors[3][3] = {{255, 0, 0}, {0, 255, 0}, {0, 0, 255}};
+    Array<GifFrame> frames;
+    const u32 rects[3][5] = {{0, 0, 6, 4, 1}, {0, 0, 6, 4, 3}, {2, 1, 2, 2, 0}};
+    for (u32 f = 0; f < 3; f++)
+    {
+        GifFrame& g = frames.Emplace();
+        g.x = rects[f][0], g.y = rects[f][1], g.w = rects[f][2], g.h = rects[f][3], g.disposal = rects[f][4];
+        for (u32 i = 0; i < g.w * g.h; i++)
+            g.rgba.Push(colors[f][0]), g.rgba.Push(colors[f][1]), g.rgba.Push(colors[f][2]), g.rgba.Push(255);
+    }
+    TextureData texture;
+    HX_REQUIRE(Decode(WriteGifFrames(frames, 6, 4, 5), texture));
+    HX_REQUIRE(texture.layers == 3u);
+    bool same = true;
+    for (u32 y = 0; y < 4; y++)
+        for (u32 x = 0; x < 6; x++)
+        {
+            bool inRect = x >= 2 && x < 4 && y >= 1 && y < 3;
+            const u8* expected[3] = {colors[0], colors[1], inRect ? colors[2] : colors[0]};
+            for (u32 f = 0; f < 3; f++)
+            {
+                const u8* p = texture.Pixels(f) + (y * 6 + x) * 4;
+                same = same && p[0] == expected[f][0] && p[1] == expected[f][1] && p[2] == expected[f][2] && p[3] == 255;
+            }
+        }
+    HX_CHECK(same);
+}
+
 // A cut file is an error with a reason, or (JPEG and BMP fill what is missing) an image of the size the header gives.
 HX_TEST(ImageDecoder, CutFilesAreErrorsOrWhole)
 {

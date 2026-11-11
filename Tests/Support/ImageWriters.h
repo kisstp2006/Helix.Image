@@ -121,9 +121,18 @@ namespace helix::image::testing
         return out;
     }
 
-    // A GIF with one frame per image, each of up to 4 colors from its own local palette, with a delay in 1/100 s.
-    // LZW codes are written with a clear code before every pixel, so the code size never grows.
-    inline Array<u8> WriteGif(const Array<Array<u8>>& frames, u32 width, u32 height, u32 delay)
+    // One frame of a GIF: its rectangle on the canvas (RGBA rows of w x h) and what happens to it after it is shown
+    // (the disposal method: 0 or 1 keep it, 2 clears to the background, 3 restores what was there before).
+    struct GifFrame
+    {
+        Array<u8> rgba = Array<u8>();
+        u32 x = 0, y = 0, w = 0, h = 0;
+        u32 disposal = 0;
+    };
+
+    // A GIF of frames of up to 4 colors each from its own local palette, with a delay in 1/100 s. LZW codes are
+    // written with a clear code before every pixel, so the code size never grows.
+    inline Array<u8> WriteGifFrames(const Array<GifFrame>& frames, u32 width, u32 height, u32 delay)
     {
         Array<u8> out;
         PutText(out, "GIF89a");
@@ -132,13 +141,13 @@ namespace helix::image::testing
         Put8(out, 0);
         Put8(out, 0);
         Put8(out, 0);
-        for (const Array<u8>& rgba : frames)
+        for (const GifFrame& frame : frames)
         {
             Array<u8> palette;
             Array<u8> indices;
-            for (usize i = 0; i < usize(width) * height; i++)
+            for (usize i = 0; i < usize(frame.w) * frame.h; i++)
             {
-                const u8* p = rgba.Data() + i * 4;
+                const u8* p = frame.rgba.Data() + i * 4;
                 usize found = palette.Size() / 3;
                 for (usize c = 0; c < palette.Size() / 3; c++)
                     if (palette[c * 3] == p[0] && palette[c * 3 + 1] == p[1] && palette[c * 3 + 2] == p[2])
@@ -156,15 +165,15 @@ namespace helix::image::testing
             Put8(out, 0x21);
             Put8(out, 0xF9);
             Put8(out, 4);
-            Put8(out, 0);
+            Put8(out, (frame.disposal & 7) << 2);
             PutLe16(out, delay);
             Put8(out, 0);
             Put8(out, 0);
             Put8(out, 0x2C);
-            PutLe16(out, 0);
-            PutLe16(out, 0);
-            PutLe16(out, width);
-            PutLe16(out, height);
+            PutLe16(out, frame.x);
+            PutLe16(out, frame.y);
+            PutLe16(out, frame.w);
+            PutLe16(out, frame.h);
             Put8(out, 0x80 | 1);
             for (usize i = 0; i < 12; i++)
                 Put8(out, palette[i]);
@@ -200,5 +209,18 @@ namespace helix::image::testing
         }
         Put8(out, 0x3B);
         return out;
+    }
+
+    // Whole canvas frames.
+    inline Array<u8> WriteGif(const Array<Array<u8>>& frames, u32 width, u32 height, u32 delay)
+    {
+        Array<GifFrame> all;
+        for (const Array<u8>& rgba : frames)
+        {
+            GifFrame& f = all.Emplace();
+            f.rgba = rgba;
+            f.w = width, f.h = height;
+        }
+        return WriteGifFrames(all, width, height, delay);
     }
 }

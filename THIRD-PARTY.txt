@@ -6,7 +6,12 @@ ThirdParty/stb_image/stb_image.h
   Source: https://raw.githubusercontent.com/nothings/stb/master/stb_image.h (2026-11-10)
   SHA-256: 594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3
   Used for JPEG, BMP, TGA, PSD and GIF (Source/Helix/Image/Codecs/Implementation/StbDecoders.cpp).
-  The file is unchanged. Known faults and how the wrapper avoids them:
+  Changed in our copy (the SHA-256 above is of the original):
+  - stbi__load_gif_main: the frame a "restore to previous" disposal goes back to was taken from before the frame
+    buffer (two_back = out - 2 * stride) instead of two frames back (out + (layers - 2) * stride), reading memory
+    outside the buffer for the frame after such a disposal. Found by AddressSanitizer on an animated GIF of Pillow in
+    the Helix.Corpus; test ImageDecoder.GifRestoreToPrevious.
+  Known faults and how the wrapper avoids them:
   - stbi_is_16_bit does not find 16 bit PSD files outside MSVC: STBI_NOTUSED(v) is (void)sizeof(v) there, so the
     header fields it should skip are not read. The wrapper reads the PSD depth itself.
   - Damaged headers make it allocate huge blocks; the wrapper's allocator refuses blocks larger than any texture.

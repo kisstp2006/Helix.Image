@@ -53,7 +53,7 @@ block, ordered layer, face, mip, with a table of offsets and sizes. Damaged file
 | PNG | own | RGBA8, RGBA16 for 16 bit files |
 | JPEG, BMP, TGA | stb_image | RGBA8 |
 | PSD | stb_image | RGBA8, RGBA16 for 16 bit files (flattened composite) |
-| GIF | stb_image | RGBA8, one array layer per frame, `frameDelays` in milliseconds |
+| GIF | stb_image | RGBA8, one array layer per frame, `frameDelays` in milliseconds (a disposal fault fixed in our copy, see `THIRD-PARTY.txt`) |
 | HDR (Radiance RGBE) | own | RGB32Float, linear; flat, old and per channel run length scanlines, both orientations |
 | TIFF | own | RGBA8, RGBA16 or RGBA32Float; strips and tiles, chunky and planar, none / PackBits / LZW / Deflate, horizontal and float predictors, gray, RGB, palette, alpha (associated alpha made straight); CCITT, JPEG and other compressions are errors that name them |
 | EXR | own | RGBA16Float when every used channel is half, else RGBA32Float; linear; scanline and tiled (first level), NONE, RLE, ZIPS, ZIP, PIZ; R, G, B, A, layer prefixed names or Y |
