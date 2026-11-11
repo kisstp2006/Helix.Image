@@ -7,7 +7,8 @@
 #include <cstring>
 
 // Baseline TIFF, the first image of the file: strips or tiles; no compression, PackBits, LZW or Deflate; horizontal and
-// floating point predictors; 1 to 16 bit unsigned and 32 bit float samples; gray, RGB and palette, with an alpha sample.
+// floating point predictors; 1 to 16 bit unsigned and 32 bit float samples; gray, RGB and palette, with an alpha sample
+// (associated alpha made straight).
 namespace helix::image
 {
     namespace
@@ -39,6 +40,8 @@ namespace helix::image
         {
             u32 width = 0, height = 0, samples = 1, bits = 1;
             u32 compression = 1, photometric = 1, planar = 1, predictor = 1, sampleFormat = 1, fillOrder = 1, extraSamples = 0;
+            // The first extra sample is associated (premultiplied) alpha.
+            bool associated = false;
             u32 rowsPerStrip = 0xFFFFFFFFu, tileWidth = 0, tileHeight = 0;
             Array<u64> offsets, counts, colorMap;
             bool tiled = false;
@@ -47,6 +50,12 @@ namespace helix::image
         bool Fail(String& error, const char* what)
         {
             error = what;
+            return false;
+        }
+
+        bool Fail(String& error, String what)
+        {
+            error = Move(what);
             return false;
         }
 
@@ -114,7 +123,10 @@ namespace helix::image
                 case kColorMap: d.colorMap = v; break;
                 case kTileWidth: d.tileWidth = u32(v[0]); break;
                 case kTileLength: d.tileHeight = u32(v[0]); break;
-                case kExtraSamples: d.extraSamples = u32(v.Size()); break;
+                case kExtraSamples:
+                    d.extraSamples = u32(v.Size());
+                    d.associated = !v.Empty() && v[0] == 1;
+                    break;
                 case kSampleFormat: sampleFormats = v; break;
                 default: break;
                 }
@@ -335,6 +347,13 @@ namespace helix::image
             if (!ReadIfd(data, d, big, error))
                 return false;
             u32 color = d.photometric == 2 ? 3 : 1;
+            switch (d.compression)
+            {
+            case 1: case 5: case 8: case 32946: case 32773: break;
+            case 2: case 3: case 4: return Fail(error, "an unsupported compression (CCITT fax)");
+            case 6: case 7: return Fail(error, "an unsupported compression (JPEG)");
+            default: return Fail(error, Format("an unsupported compression ({})", d.compression));
+            }
             if (d.photometric > 3)
                 return Fail(error, "an unsupported color model (only gray, RGB and palette)");
             if (d.samples < color)
@@ -424,6 +443,21 @@ namespace helix::image
                         if (d.photometric == 0 && d.bits != 32)
                             rgba[0] = rgba[1] = rgba[2] = maximum - rgba[0];
                         rgba[3] = alpha ? sample(x, y, color) : (d.bits == 32 ? 0x3F800000u : maximum);
+                        // Associated alpha back to straight alpha, as every other decoder gives it.
+                        if (alpha && d.associated)
+                        {
+                            if (d.bits == 32)
+                            {
+                                float f[4];
+                                std::memcpy(f, rgba, 16);
+                                for (u32 c = 0; c < 3 && f[3] > 0; c++)
+                                    f[c] /= f[3];
+                                std::memcpy(rgba, f, 16);
+                            }
+                            else if (rgba[3] > 0)
+                                for (u32 c = 0; c < 3; c++)
+                                    rgba[c] = Min(maximum, (rgba[c] * maximum + rgba[3] / 2) / rgba[3]);
+                        }
                     }
                     usize p = (usize(y) * d.width + x) * 4;
                     if (format == PixelFormat::RGBA32Float)

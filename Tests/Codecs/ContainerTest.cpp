@@ -81,6 +81,53 @@ HX_TEST(Dds, ReadsFourCCMasksAndDx10)
     HX_CHECK(!DecodeImage(Span<const u8>(unknown.Data(), unknown.Size()), texture, error) && error == StringView("DDS: DXGI format 130 is not supported"));
 }
 
+// L8, A8L8 and L16 by the luminance flag, whatever the masks say (Pillow writes 0xFF000000 for L8), widened to gray
+// RGBA with every mip.
+HX_TEST(Dds, ReadsLuminance)
+{
+    struct Case
+    {
+        PixelFormat stored;
+        u32 masks[5];
+        u32 alphaFlag;
+        PixelFormat decoded;
+    };
+    const Case cases[] = {
+        {PixelFormat::R8, {8, 0xFF000000, 0xFF000000, 0xFF000000, 0}, 0, PixelFormat::RGBA8},
+        {PixelFormat::RG8, {16, 0xFF, 0, 0, 0xFF00}, 1, PixelFormat::RGBA8},
+        {PixelFormat::R16, {16, 0xFFFF, 0, 0, 0}, 0, PixelFormat::RGBA16},
+    };
+    for (const Case& c : cases)
+    {
+        TextureData stored = Make(c.stored, 9, 6, 1, 1, 1, 3);
+        Array<u8> file = WriteDds(stored, 0, 0, c.masks);
+        // The pixel format flags: luminance, and alpha pixels for A8L8.
+        u32 flags = 0x20000 | c.alphaFlag;
+        for (u32 b = 0; b < 4; b++)
+            file[80 + b] = u8(flags >> (8 * b));
+        TextureData texture;
+        String error;
+        HX_REQUIRE(DecodeImage(Span<const u8>(file.Data(), file.Size()), texture, error));
+        HX_CHECK(texture.format == c.decoded && texture.mips == 3);
+        bool same = true;
+        for (u32 mip = 0; mip < 3; mip++)
+        {
+            const Subresource& s = stored.At(0, 0, mip);
+            const u8* src = stored.data.Data() + s.offset;
+            const u8* dst = texture.Pixels(0, 0, mip);
+            for (usize i = 0; i < usize(s.width) * s.height; i++)
+                if (c.stored == PixelFormat::R16)
+                    same = same && dst[i * 8] == src[i * 2] && dst[i * 8 + 3] == src[i * 2 + 1] && dst[i * 8 + 5] == src[i * 2 + 1] && dst[i * 8 + 6] == 0xFF;
+                else
+                {
+                    u8 l = c.stored == PixelFormat::RG8 ? src[i * 2] : src[i], a = c.stored == PixelFormat::RG8 ? src[i * 2 + 1] : 0xFF;
+                    same = same && dst[i * 4] == l && dst[i * 4 + 1] == l && dst[i * 4 + 2] == l && dst[i * 4 + 3] == a;
+                }
+        }
+        HX_CHECK(same);
+    }
+}
+
 HX_TEST(Ktx, ReadsKtx1WithRowPaddingCubesAndArrays)
 {
     TextureData rgb = Make(PixelFormat::RGB8, 7, 5, 1, 1, 1, 3);

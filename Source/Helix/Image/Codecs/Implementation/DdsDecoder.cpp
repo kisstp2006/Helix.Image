@@ -78,7 +78,41 @@ namespace helix::image
             {8, 0, 0, 0, 0xFF, F::R8, false},
         };
 
-        constexpr u32 kFourCCFlag = 0x4, kCubemap = 0x200, kAllFaces = 0xFC00, kVolume = 0x200000;
+        constexpr u32 kFourCCFlag = 0x4, kLuminance = 0x20000, kCubemap = 0x200, kAllFaces = 0xFC00, kVolume = 0x200000;
+
+        // Legacy luminance layouts (L8, A8L8, L16), known by their flag and size as DirectXTex does (writers disagree on
+        // the masks): stored as R8, RG8 or R16 and widened to gray RGBA, as they sample.
+        PixelFormat Luminance(u32 bits, u32 pfFlags)
+        {
+            if (bits == 8 && !(pfFlags & 1))
+                return PixelFormat::R8;
+            if (bits == 16 && (pfFlags & 1))
+                return PixelFormat::RG8;
+            if (bits == 16)
+                return PixelFormat::R16;
+            return PixelFormat::Unknown;
+        }
+
+        void WidenLuminance(const TextureData& stored, TextureData& out)
+        {
+            for (usize s = 0; s < stored.subresources.Size(); s++)
+            {
+                const Subresource& from = stored.subresources[s];
+                const u8* src = stored.data.Data() + from.offset;
+                u8* dst = out.data.Data() + out.subresources[s].offset;
+                usize n = usize(from.width) * from.height * from.depth;
+                for (usize i = 0; i < n; i++)
+                    if (stored.format == PixelFormat::R16)
+                        for (u32 c = 0; c < 4; c++)
+                            dst[i * 8 + c * 2] = c == 3 ? 0xFF : src[i * 2], dst[i * 8 + c * 2 + 1] = c == 3 ? 0xFF : src[i * 2 + 1];
+                    else
+                    {
+                        u8 l = stored.format == PixelFormat::RG8 ? src[i * 2] : src[i];
+                        u8 a = stored.format == PixelFormat::RG8 ? src[i * 2 + 1] : 0xFF;
+                        dst[i * 4] = dst[i * 4 + 1] = dst[i * 4 + 2] = l, dst[i * 4 + 3] = a;
+                    }
+            }
+        }
 
         bool MatchesDds(Span<const u8> data) { return data.Size() >= 128 && std::memcmp(data.Data(), "DDS ", 4) == 0; }
 
@@ -128,6 +162,12 @@ namespace helix::image
                 if (format == PixelFormat::Unknown)
                     return error = Format("FourCC {} is not supported", fourCC), false;
             }
+            else if (pfFlags & kLuminance)
+            {
+                format = Luminance(bits, pfFlags);
+                if (format == PixelFormat::Unknown)
+                    return error = Format("a {} bit luminance layout that is not supported", bits), false;
+            }
             else
             {
                 for (const Masks& m : kMasks)
@@ -150,14 +190,23 @@ namespace helix::image
                 depth = 1;
             depth = depth ? depth : 1;
             mips = mips ? mips : 1;
-            if (!out.Allocate(format, width, height, depth, layers, cube ? 6 : 1, mips))
+            bool luminance = !(pfFlags & kFourCCFlag) && (pfFlags & kLuminance);
+            TextureData stored;
+            TextureData& target = luminance ? stored : out;
+            if (!target.Allocate(format, width, height, depth, layers, cube ? 6 : 1, mips))
                 return error = "the texture is empty or too large", false;
-            out.dimension = cube ? TextureDimension::Cube : depth > 1 ? TextureDimension::Texture3D : TextureDimension::Texture2D;
-            out.colorSpace = srgb ? ColorSpace::Srgb : ColorSpace::Unspecified;
-            Span<const u8> bytes = r.Bytes(out.data.Size());
+            Span<const u8> bytes = r.Bytes(target.data.Size());
             if (!r.ok)
                 return error = "the file is shorter than its surfaces", false;
-            std::memcpy(out.data.Data(), bytes.Data(), bytes.Size());
+            std::memcpy(target.data.Data(), bytes.Data(), bytes.Size());
+            if (luminance)
+            {
+                if (!out.Allocate(format == PixelFormat::R16 ? PixelFormat::RGBA16 : PixelFormat::RGBA8, width, height, depth, layers, cube ? 6 : 1, mips))
+                    return error = "the texture is empty or too large", false;
+                WidenLuminance(stored, out);
+            }
+            out.dimension = cube ? TextureDimension::Cube : depth > 1 ? TextureDimension::Texture3D : TextureDimension::Texture2D;
+            out.colorSpace = srgb ? ColorSpace::Srgb : ColorSpace::Unspecified;
             if (swapRgb)
                 for (usize i = 0; i + 2 < out.data.Size(); i += 3)
                 {

@@ -95,6 +95,8 @@ namespace helix::image::testing
         bool tiled = false;
         bool planar = false;
         u32 rowsPerStrip = 3;
+        // ExtraSamples 1 (premultiplied) instead of 2.
+        bool associatedAlpha = false;
     };
 
     // A TIFF of `samples` per pixel from raw sample values (one u32 each, floats as their bits); palette files take a
@@ -248,7 +250,7 @@ namespace helix::image::testing
         }
         u32 color = o.photometric == 2 ? 3 : 1;
         if (o.samples > color)
-            add(338, 3, one(2));
+            add(338, 3, one(o.associatedAlpha ? 1 : 2));
         add(339, 3, formats);
         for (usize i = 1; i < entries.Size(); i++)
             for (usize j = i; j > 0 && entries[j - 1].tag > entries[j].tag; j--)

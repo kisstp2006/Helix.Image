@@ -187,6 +187,79 @@ HX_TEST(Tiff, ReadsPalettes)
     HX_CHECK(same);
 }
 
+// Compressions the decoder does not read are named, not reported as damaged data (found with the corpus files of
+// Pillow's libtiff: CCITT group 4 and JPEG).
+// Associated (premultiplied) alpha, as Blender writes RGBA TIFFs, comes back as straight alpha (the colors divided by
+// alpha and rounded; fully transparent pixels keep their zero colors).
+HX_TEST(Tiff, AssociatedAlphaBecomesStraight)
+{
+    for (u32 bits : {8u, 16u})
+    {
+        u32 maximum = bits == 8 ? 255 : 65535;
+        Array<u32> values;
+        // Straight colors and alphas, premultiplied for the file.
+        const u32 straight[4][4] = {{maximum, maximum / 2, 0, maximum / 4}, {maximum / 3, maximum, maximum / 5, maximum}, {0, 0, 0, 0},
+                                    {maximum, maximum, maximum, maximum / 2}};
+        for (const auto& px : straight)
+        {
+            for (u32 c = 0; c < 3; c++)
+                values.Push((px[c] * px[3] + maximum / 2) / maximum);
+            values.Push(px[3]);
+        }
+        TiffOptions o;
+        o.bits = bits;
+        o.samples = 4;
+        o.associatedAlpha = true;
+        TextureData texture;
+        HX_REQUIRE(Decode(WriteTiff(values, 2, 2, o), texture));
+        bool close = true;
+        for (u32 p = 0; p < 4; p++)
+            for (u32 c = 0; c < 4; c++)
+            {
+                u32 got = bits == 8 ? texture.data[p * 4 + c] : u32(texture.data[(p * 4 + c) * 2]) | u32(texture.data[(p * 4 + c) * 2 + 1]) << 8;
+                u32 want = straight[p][3] == 0 && c < 3 ? 0 : straight[p][c];
+                // Premultiplying lost up to half a step of alpha's scale.
+                u32 bound = c < 3 && straight[p][3] ? maximum / (2 * straight[p][3]) + 1 : 0;
+                close = close && (got > want ? got - want : want - got) <= bound;
+            }
+        HX_CHECK(close);
+    }
+}
+
+HX_TEST(Tiff, UnsupportedCompressionsAreNamed)
+{
+    Array<u32> values;
+    for (u32 i = 0; i < 8 * 8 * 3; i++)
+        values.Push(i & 255);
+    TiffOptions o;
+    o.compression = 1;
+    const Array<u8> plain = WriteTiff(values, 8, 8, o);
+    struct Case
+    {
+        u16 compression;
+        const char* message;
+    };
+    for (Case c : {Case{4, "CCITT"}, Case{7, "JPEG"}, Case{99, "(99)"}})
+    {
+        Array<u8> file = plain;
+        // The compression entry (tag 259) of the first directory: its SHORT value sits in the entry's last field.
+        u32 ifd = u32(file[4]) | u32(file[5]) << 8 | u32(file[6]) << 16 | u32(file[7]) << 24;
+        u32 entries = u32(file[ifd]) | u32(file[ifd + 1]) << 8;
+        bool patched = false;
+        for (u32 i = 0; i < entries; i++)
+        {
+            u8* e = file.Data() + ifd + 2 + i * 12;
+            if ((u32(e[0]) | u32(e[1]) << 8) == 259)
+                e[8] = u8(c.compression), e[9] = u8(c.compression >> 8), patched = true;
+        }
+        HX_REQUIRE(patched);
+        TextureData texture;
+        String error;
+        HX_CHECK(!DecodeImage(Span<const u8>(file.Data(), file.Size()), texture, error));
+        HX_CHECK(StringView(error).Contains(StringView(c.message)));
+    }
+}
+
 HX_TEST(Tiff, DamagedFilesAreErrors)
 {
     Array<u32> values;

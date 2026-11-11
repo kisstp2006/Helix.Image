@@ -55,9 +55,9 @@ block, ordered layer, face, mip, with a table of offsets and sizes. Damaged file
 | PSD | stb_image | RGBA8, RGBA16 for 16 bit files (flattened composite) |
 | GIF | stb_image | RGBA8, one array layer per frame, `frameDelays` in milliseconds |
 | HDR (Radiance RGBE) | own | RGB32Float, linear; flat, old and per channel run length scanlines, both orientations |
-| TIFF | own | RGBA8, RGBA16 or RGBA32Float; strips and tiles, chunky and planar, none / PackBits / LZW / Deflate, horizontal and float predictors, gray, RGB, palette, alpha |
+| TIFF | own | RGBA8, RGBA16 or RGBA32Float; strips and tiles, chunky and planar, none / PackBits / LZW / Deflate, horizontal and float predictors, gray, RGB, palette, alpha (associated alpha made straight); CCITT, JPEG and other compressions are errors that name them |
 | EXR | own | RGBA16Float when every used channel is half, else RGBA32Float; linear; scanline and tiled (first level), NONE, RLE, ZIPS, ZIP, PIZ; R, G, B, A, layer prefixed names or Y |
-| DDS | own | the stored format: legacy FourCC and pixel masks or the DX10 header; 2D, cube, array, volume, mips |
+| DDS | own | the stored format: legacy FourCC and pixel masks or the DX10 header; 2D, cube, array, volume, mips; legacy luminance (L8, A8L8, L16, known by the flag) widened to gray RGBA8 / RGBA16 |
 | KTX, KTX2 | own | the stored format; KTX rows unpadded, KTX2 supercompression none or zlib (Basis and Zstandard are errors) |
 | PVR (v3) | own | the stored format: BC, ETC2 / EAC, ASTC and uncompressed channel layouts (PVRTC is an error) |
 
