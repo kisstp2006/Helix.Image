@@ -56,6 +56,22 @@ HX_TEST(Deflate, RoundTripsAllLevelsAndShapes)
             }
 }
 
+// Matches that run to the last byte of the input: the encoder must not look one byte past it (found by
+// AddressSanitizer; the input sits in a block of exactly its size so the sanitizer sees such a read).
+HX_TEST(Deflate, MatchesReachingTheEnd)
+{
+    for (usize size = 3; size < 700; size += 7)
+        for (usize period : {usize(1), usize(3), usize(5), usize(64)})
+            for (int level : {1, 4, 9})
+            {
+                Array<u8> input;
+                input.Reserve(size);
+                for (usize i = 0; i < size; i++)
+                    input.Push(u8("helix"[(i % period) % 5] + i % period));
+                HX_CHECK(RoundTrip(input, level));
+            }
+}
+
 HX_TEST(Deflate, CompressesRedundantData)
 {
     usize zeros = 0, text = 0, noise = 0;

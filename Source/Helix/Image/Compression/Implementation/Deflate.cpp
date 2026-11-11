@@ -413,7 +413,8 @@ namespace helix::image
                     for (u32 chain = 0; candidate >= 0 && chain < maxChain; chain++)
                     {
                         usize c = usize(candidate);
-                        if (i - c > kWindow - 1 || c >= i)
+                        // A match as long as the rest of the input cannot be beaten (and data[i + best] would be past it).
+                        if (i - c > kWindow - 1 || c >= i || best >= limit)
                             break;
                         if (data[c + best] == data[i + best])
                         {

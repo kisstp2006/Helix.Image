@@ -52,8 +52,9 @@ namespace helix::image::astc
         // The two endpoints of one partition from its unquantized values; false for HDR modes.
         bool Endpoints(u32 cem, const i32* v, i32 e0[4], i32 e1[4])
         {
-            i32 a[8];
-            std::memcpy(a, v, sizeof(a));
+            // Only the mode's own values: the last partition's may end the block's values.
+            i32 a[8] = {};
+            std::memcpy(a, v, ((cem >> 2) + 1) * 2 * sizeof(i32));
             auto set = [](i32* e, i32 r, i32 g, i32 b, i32 alpha) {
                 e[0] = r;
                 e[1] = g;
