@@ -3,6 +3,7 @@
 
 #include <Helix/Core/Basics/Assert.h>
 #include <Helix/Core/Memory/Allocator.h>
+#include <Helix/Core/Strings/Format.h>
 
 #include <cstring>
 
@@ -124,6 +125,64 @@ namespace helix::image
             return ok;
         }
 
+        // stb_image fills what a short file lacks, so a header of a few bytes could ask for gigabytes of pixels. TGA and
+        // BMP say how their pixels are stored: an image needs at least the bytes its storage takes (raw), or the
+        // fewest bytes its run length packets can expand from (RLE). Claims beyond that are damaged files.
+        u64 Le(Span<const u8> d, usize at, u32 bytes)
+        {
+            u64 v = 0;
+            for (u32 i = 0; i < bytes; i++)
+                v |= u64(d[at + i]) << (8 * i);
+            return v;
+        }
+
+        bool PlausibleTga(Span<const u8> d, String& error)
+        {
+            if (d.Size() < 18)
+                return true;
+            u64 colorMapBytes = d[1] ? Le(d, 5, 2) * ((u64(d[7]) + 7) / 8) : 0;
+            u64 start = 18 + u64(d[0]) + colorMapBytes;
+            u64 pixels = Le(d, 12, 2) * Le(d, 14, 2), bytes = (u64(d[16]) + 7) / 8;
+            u64 left = start < d.Size() ? d.Size() - start : 0;
+            u32 type = d[2];
+            // Raw: every pixel's bytes. Run length: a packet of a header byte and one pixel gives up to 128 pixels.
+            u64 most = type >= 9 && type <= 11 ? left / (1 + (bytes ? bytes : 1)) * 128 : bytes ? left / bytes : pixels;
+            if (pixels <= most)
+                return true;
+            error = Format("{} pixels where the file holds at most {}", pixels, most);
+            return false;
+        }
+
+        bool PlausibleBmp(Span<const u8> d, String& error)
+        {
+            if (d.Size() < 34)
+                return true;
+            u64 offset = Le(d, 10, 4), header = Le(d, 14, 4);
+            if (header < 40)
+                return true;
+            u64 w = Le(d, 18, 4), h = Le(d, 22, 4), bits = Le(d, 28, 2), compression = Le(d, 30, 4);
+            // Negative heights are top down.
+            if (h >= 0x80000000u)
+                h = 0x100000000ull - h;
+            if (w >= 0x80000000u)
+                return true;
+            u64 left = offset < d.Size() ? d.Size() - offset : 0;
+            u64 most;
+            if (compression == 1 || compression == 2)
+                most = left / 2 * 255; // RLE8 / RLE4: two bytes give up to 255 pixels
+            else if (compression == 0 || compression == 3 || compression == 6)
+                most = bits ? (left / ((w * bits + 31) / 32 * 4 ? (w * bits + 31) / 32 * 4 : 1) + 1) * w : w * h;
+            else
+                return true;
+            if (w * h <= most)
+                return true;
+            error = Format("{} pixels where the file holds at most {}", w * h, most);
+            return false;
+        }
+
+        bool DecodeTga(Span<const u8> data, TextureData& out, String& error) { return PlausibleTga(data, error) && DecodeStill(data, out, error); }
+        bool DecodeBmp(Span<const u8> data, TextureData& out, String& error) { return PlausibleBmp(data, error) && DecodeStill(data, out, error); }
+
         // Every frame becomes an array layer, its delay goes to frameDelays.
         bool DecodeGif(Span<const u8> data, TextureData& out, String& error)
         {
@@ -163,14 +222,14 @@ namespace helix::image
     const ImageDecoder& BmpImageDecoder()
     {
         static constexpr StringView kExtensions[] = {"bmp", "dib"};
-        static const ImageDecoder kDecoder{"BMP", Span<const StringView>(kExtensions, 2), &MatchesBmp, &DecodeStill};
+        static const ImageDecoder kDecoder{"BMP", Span<const StringView>(kExtensions, 2), &MatchesBmp, &DecodeBmp};
         return kDecoder;
     }
 
     const ImageDecoder& TgaImageDecoder()
     {
         static constexpr StringView kExtensions[] = {"tga", "targa"};
-        static const ImageDecoder kDecoder{"TGA", Span<const StringView>(kExtensions, 2), nullptr, &DecodeStill};
+        static const ImageDecoder kDecoder{"TGA", Span<const StringView>(kExtensions, 2), nullptr, &DecodeTga};
         return kDecoder;
     }
 

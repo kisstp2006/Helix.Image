@@ -207,6 +207,36 @@ HX_TEST(ImageDecoder, GifRestoreToPrevious)
     HX_CHECK(same);
 }
 
+// A TGA or BMP header that claims more pixels than the rest of the file can hold, raw or run length coded, is an
+// error before any pixel is made (found by the fuzz runner: a 96 byte TGA asked for 1.8 GB).
+HX_TEST(ImageDecoder, ClaimsBeyondTheDataAreErrors)
+{
+    Array<Array<u8>> one;
+    Array<u8>& px = one.Emplace();
+    for (u32 i = 0; i < 4 * 3; i++)
+        px.Push(u8(i * 20)), px.Push(u8(i * 7)), px.Push(u8(255 - i)), px.Push(255);
+    for (bool rle : {false, true})
+    {
+        Array<u8> tga = WriteTga(px, 4, 3, rle, false);
+        TextureData texture;
+        String error;
+        HX_REQUIRE(DecodeImage(Span<const u8>(tga.Data(), tga.Size()), texture, error, "tga"));
+        // Width 50000, height 9000.
+        tga[12] = 0x50, tga[13] = 0xC3, tga[14] = 0x28, tga[15] = 0x23;
+        HX_CHECK(!DecodeImage(Span<const u8>(tga.Data(), tga.Size()), texture, error, "tga"));
+        HX_CHECK(StringView(error).Contains(StringView("where the file holds at most")));
+    }
+    Array<u8> bmp;
+    bmp.Append(kBmpFile, sizeof(kBmpFile));
+    TextureData texture;
+    String error;
+    HX_REQUIRE(DecodeImage(Span<const u8>(bmp.Data(), bmp.Size()), texture, error));
+    // Height 20000.
+    bmp[22] = 0x20, bmp[23] = 0x4E, bmp[24] = 0, bmp[25] = 0;
+    HX_CHECK(!DecodeImage(Span<const u8>(bmp.Data(), bmp.Size()), texture, error));
+    HX_CHECK(StringView(error).Contains(StringView("where the file holds at most")));
+}
+
 // A cut file is an error with a reason, or (JPEG and BMP fill what is missing) an image of the size the header gives.
 HX_TEST(ImageDecoder, CutFilesAreErrorsOrWhole)
 {
