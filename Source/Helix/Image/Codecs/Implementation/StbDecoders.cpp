@@ -183,6 +183,41 @@ namespace helix::image
             return false;
         }
 
+        u64 Be(Span<const u8> d, usize at, u32 bytes)
+        {
+            u64 v = 0;
+            for (u32 i = 0; i < bytes; i++)
+                v = v << 8 | d[at + i];
+            return v;
+        }
+
+        // PSD: the header, three sections with their lengths, the compression, then the pixels of each channel (stb
+        // reads the first four). Raw planes take width * height * bytes each; run length rows (after a table of two
+        // bytes per row and channel) take at least two bytes per 128 pixels. stb reads zeros past the end, so a damaged
+        // header would make it walk billions of pixels.
+        bool PlausiblePsd(Span<const u8> d, String& error)
+        {
+            if (d.Size() < 26)
+                return true;
+            u64 channels = Be(d, 12, 2), h = Be(d, 14, 4), w = Be(d, 18, 4), depth = Be(d, 22, 2);
+            // Sections that run past the end leave no pixels (stb reads zeros there: raw data).
+            u64 at = 26;
+            for (int section = 0; section < 3 && at < d.Size(); section++)
+                at = at + 4 <= d.Size() ? at + 4 + Be(d, usize(at), 4) : d.Size();
+            u64 compression = at + 2 <= d.Size() ? Be(d, usize(at), 2) : 0;
+            at += 2;
+            u64 left = at < d.Size() ? d.Size() - at : 0;
+            u64 read = channels < 4 ? channels : 4;
+            u64 bytes = depth == 16 ? 2 : 1;
+            // In 64 bits: width and height are below 2^31 (or stb refuses them), channels at most 16.
+            u64 need = compression == 1 ? h * channels * 2 + read * h * ((w + 127) / 128) * 2 : compression == 0 ? read * w * h * bytes : 0;
+            if (w >= 0x80000000u || h >= 0x80000000u || need <= left)
+                return true;
+            error = Format("{} x {} pixels where the file holds at most {} bytes of them ({} needed)", w, h, left, need);
+            return false;
+        }
+
+        bool DecodePsd(Span<const u8> data, TextureData& out, String& error) { return PlausiblePsd(data, error) && DecodeStill(data, out, error); }
         bool DecodeTga(Span<const u8> data, TextureData& out, String& error) { return PlausibleTga(data, error) && DecodeStill(data, out, error); }
         bool DecodeBmp(Span<const u8> data, TextureData& out, String& error) { return PlausibleBmp(data, error) && DecodeStill(data, out, error); }
 
@@ -239,7 +274,7 @@ namespace helix::image
     const ImageDecoder& PsdImageDecoder()
     {
         static constexpr StringView kExtensions[] = {"psd"};
-        static const ImageDecoder kDecoder{"PSD", Span<const StringView>(kExtensions, 1), &MatchesPsd, &DecodeStill};
+        static const ImageDecoder kDecoder{"PSD", Span<const StringView>(kExtensions, 1), &MatchesPsd, &DecodePsd};
         return kDecoder;
     }
 

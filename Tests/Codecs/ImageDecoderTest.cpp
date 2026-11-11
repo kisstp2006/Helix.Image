@@ -235,6 +235,23 @@ HX_TEST(ImageDecoder, ClaimsBeyondTheDataAreErrors)
     bmp[22] = 0x20, bmp[23] = 0x4E, bmp[24] = 0, bmp[25] = 0;
     HX_CHECK(!DecodeImage(Span<const u8>(bmp.Data(), bmp.Size()), texture, error));
     HX_CHECK(StringView(error).Contains(StringView("where the file holds at most")));
+    // PSD raw and run length (compression at byte 38): 50000 x 9000 from a few bytes.
+    for (u8 compression : {u8(0), u8(1)})
+    {
+        Array<u8> psd = WritePsd(px, 4, 3, false);
+        psd[39] = compression;
+        if (compression == 0)
+            HX_REQUIRE(DecodeImage(Span<const u8>(psd.Data(), psd.Size()), texture, error));
+        psd[14] = 0, psd[15] = 0, psd[16] = 0x23, psd[17] = 0x28;
+        psd[18] = 0, psd[19] = 0, psd[20] = 0xC3, psd[21] = 0x50;
+        HX_CHECK(!DecodeImage(Span<const u8>(psd.Data(), psd.Size()), texture, error));
+        HX_CHECK(StringView(error).Contains(StringView("where the file holds at most")));
+    }
+    // A section length past the end leaves no room for pixels (stb would read zeros for all of them).
+    Array<u8> psd = WritePsd(px, 4, 3, false);
+    psd[26] = 0x7F, psd[27] = 0xFF, psd[28] = 0xFF, psd[29] = 0xFF;
+    HX_CHECK(!DecodeImage(Span<const u8>(psd.Data(), psd.Size()), texture, error));
+    HX_CHECK(StringView(error).Contains(StringView("where the file holds at most")));
 }
 
 // A cut file is an error with a reason, or (JPEG and BMP fill what is missing) an image of the size the header gives.
