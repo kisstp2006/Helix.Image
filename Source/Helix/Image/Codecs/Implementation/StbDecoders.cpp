@@ -38,10 +38,13 @@ namespace helix::image::stb
         HeapAllocator().Free(block, size + kHeader, kHeader);
     }
 
+    // As C realloc: when the new block cannot be had, the old one stays (stb frees it on its out of memory path).
     void* Reallocate(void* memory, usize size)
     {
         void* moved = Allocate(size);
-        if (moved && memory)
+        if (!moved)
+            return nullptr;
+        if (memory)
         {
             usize old;
             std::memcpy(&old, static_cast<u8*>(memory) - kHeader, sizeof(old));
